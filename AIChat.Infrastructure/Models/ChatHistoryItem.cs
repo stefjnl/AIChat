@@ -61,6 +61,19 @@ public class UpdateChatHistoryRequest
 }
 
 /// <summary>
+/// Request model for creating a new chat history item
+/// </summary>
+public class CreateChatHistoryRequest
+{
+    public required string ThreadId { get; set; }
+    public required string Title { get; set; }
+    public DateTime? CreatedAt { get; set; }
+    public DateTime? LastUpdatedAt { get; set; }
+    public int MessageCount { get; set; }
+    public bool IsActive { get; set; }
+}
+
+/// <summary>
 /// Response model for chat history operations
 /// </summary>
 public class ChatHistoryResponse

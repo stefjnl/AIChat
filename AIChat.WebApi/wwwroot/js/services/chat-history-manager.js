@@ -82,6 +82,34 @@
       return this.chatHistory.find(item => item.isActive) || null;
     }
 
+    async updateMessageCount(threadId) {
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}`);
+        if (response.ok) {
+          const threadData = await response.json();
+          let messageCount = 0;
+          
+          if (threadData && threadData.messages && Array.isArray(threadData.messages)) {
+            messageCount = threadData.messages.length;
+          } else if (threadData && Array.isArray(threadData)) {
+            messageCount = threadData.length;
+          }
+          
+          // Update the message count in the history item
+          const historyItem = this.chatHistory.find(item => item.threadId === threadId);
+          if (historyItem) {
+            historyItem.messageCount = messageCount;
+            historyItem.lastUpdatedAt = new Date().toISOString();
+          }
+          
+          return messageCount;
+        }
+      } catch (err) {
+        console.warn("Failed to update message count for thread:", threadId, err);
+      }
+      return 0;
+    }
+
     async createChatHistoryItem(threadId, title) {
       try {
         // Generate a more sensible default title if none provided

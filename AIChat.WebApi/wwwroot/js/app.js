@@ -92,9 +92,9 @@
         this.uiStateManager.updateCharHint();
         this.uiStateManager.updateSendEnabled();
         
-        // Show welcome screen if we have a thread
+        // Show welcome screen if we have a thread with no messages
         if (this.threadManager.getCurrentThreadId()) {
-          this.uiStateManager.showWelcome(true);
+          this.uiStateManager.showWelcome(true, true); // Force show on init
         }
       } catch (err) {
         console.error("Error initializing app:", err);
@@ -137,6 +137,9 @@
         return;
       }
       
+      // Hide welcome screen immediately when user starts typing a message
+      this.uiStateManager.showWelcome(false);
+      
       if (!this.threadManager.getCurrentThreadId()) {
         const result = await this.threadManager.createNewThread();
         if (!result.success) {
@@ -151,41 +154,63 @@
         );
       }
       
-      // Generate auto-title from first user message
-      if (this.autoTitleService.shouldGenerateTitle(
+      // Don't generate title immediately - wait for AI response to have more context
+      this.awaitingTitleGeneration = this.autoTitleService.shouldGenerateTitle(
         this.chatHistoryManager.getChatHistory(),
         this.threadManager.getCurrentThreadId()
-      )) {
-        this.generateAutoTitle(message);
-      }
+      );
       
       // Send the message
       await this.processMessage(message);
     }
 
-    async generateAutoTitle(message) {
+    async generateAutoTitle(userMessage, aiResponse = null) {
       try {
         const title = await this.autoTitleService.generateAutoTitle(
-          message,
-          this.threadManager.getCurrentThreadId()
+          userMessage,
+          this.threadManager.getCurrentThreadId(),
+          aiResponse
         );
         
         if (title) {
-          this.autoTitleService.updateHistoryItemTitle(
+          const success = this.autoTitleService.updateHistoryItemTitle(
             this.chatHistoryManager.chatHistory,
             this.threadManager.getCurrentThreadId(),
             title,
-            message
+            userMessage
           );
-          this.chatHistoryUI.updateHistoryDisplay(
-            this.elements.chatHistoryList,
-            this.threadManager.getCurrentThreadId(),
-            (threadId) => this.selectThread(threadId),
-            (threadId) => this.deleteChatHistoryItem(threadId)
-          );
+          
+          if (success) {
+            // Update the backend with the new title
+            await this.updateChatHistoryTitle(this.threadManager.getCurrentThreadId(), title);
+            
+            // Update the UI
+            this.chatHistoryUI.updateHistoryDisplay(
+              this.elements.chatHistoryList,
+              this.threadManager.getCurrentThreadId(),
+              (threadId) => this.selectThread(threadId),
+              (threadId) => this.deleteChatHistoryItem(threadId)
+            );
+          }
         }
       } catch (err) {
         console.warn("Failed to generate auto-title:", err);
+      }
+    }
+
+    async updateChatHistoryTitle(threadId, title) {
+      try {
+        const response = await fetch(`/api/chathistory/${threadId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title })
+        });
+        
+        if (!response.ok) {
+          console.warn("Failed to update title on backend");
+        }
+      } catch (err) {
+        console.warn("Error updating title on backend:", err);
       }
     }
 
@@ -194,7 +219,10 @@
       this.messageRenderer.addMessage(
         this.elements.messagesContainer,
         "user",
-        message
+        message,
+        null, // id
+        null, // providerName
+        new Date().toISOString() // timestamp
       );
       
       // 2. Assistant placeholder
@@ -247,6 +275,12 @@
                 this.uiStateManager.updateStats(chunk.usage, ms);
               }
               this.uiStateManager.hideStreamingIndicator();
+              
+              // Generate auto-title now that we have both user message and AI response
+              if (this.awaitingTitleGeneration) {
+                this.generateAutoTitle(message, fullResponse);
+                this.awaitingTitleGeneration = false;
+              }
             }
           },
           error: (err) => {
@@ -282,7 +316,7 @@
       if (result.success) {
         this.threadManager.saveThreadToStorage();
         this.uiStateManager.clearMessages();
-        this.uiStateManager.showWelcome(true);
+        this.uiStateManager.showWelcome(true, true); // Force show welcome for new thread
         this.uiStateManager.resetStats();
         
         // Create initial chat history item
@@ -301,32 +335,37 @@
     }
 
     async selectThread(threadId) {
+      // Clear any previous loading states in the history UI
+      this.chatHistoryUI.clearAllLoadingStates(this.elements.chatHistoryList);
+      
+      // Show loading state
+      this.uiStateManager.showLoadingState();
+      
       const result = await this.threadManager.selectThread(threadId, this.signalRManager);
       if (result.success) {
         this.threadManager.saveThreadToStorage();
         this.uiStateManager.clearMessages();
-        this.uiStateManager.showWelcome(true);
         this.uiStateManager.resetStats();
         
-        // Load thread messages if they exist
         try {
-          const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}`);
-          if (response.ok) {
-            const threadData = await response.json();
-            if (threadData && threadData.messages) {
-              // Render existing messages
-              threadData.messages.forEach(msg => {
-                this.messageRenderer.addMessage(
-                  this.elements.messagesContainer,
-                  msg.role,
-                  msg.content
-                );
-              });
-              this.uiStateManager.showWelcome(false);
-            }
+          // Load complete thread messages with better error handling
+          const messages = await this.loadThreadMessages(threadId);
+          
+          if (messages && messages.length > 0) {
+            // Render all messages with proper formatting
+            await this.renderMessagesSequentially(messages);
+            this.uiStateManager.showWelcome(false);
+            
+            // Update message count in history
+            await this.chatHistoryManager.updateMessageCount(threadId);
+          } else {
+            // No messages in thread, show welcome screen
+            this.uiStateManager.showWelcome(true);
           }
         } catch (err) {
-          console.warn("Failed to load thread messages:", err);
+          console.error("Error loading thread messages:", err);
+          this.uiStateManager.showError("Failed to load conversation history");
+          this.uiStateManager.showWelcome(true);
         }
         
         // Update UI to reflect active thread
@@ -337,6 +376,124 @@
           (threadId) => this.selectThread(threadId),
           (threadId) => this.deleteChatHistoryItem(threadId)
         );
+      } else {
+        this.uiStateManager.hideLoadingState();
+        this.uiStateManager.showError("Failed to select thread");
+      }
+    }
+
+    async loadThreadMessages(threadId) {
+      try {
+        const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const threadData = await response.json();
+        
+        // Handle different response formats
+        if (threadData && threadData.messages && Array.isArray(threadData.messages)) {
+          return threadData.messages;
+        } else if (threadData && Array.isArray(threadData)) {
+          // Direct array of messages
+          return threadData;
+        } else {
+          console.warn("Unexpected thread data format:", threadData);
+          return [];
+        }
+      } catch (error) {
+        console.error("Failed to fetch thread messages:", error);
+        throw error;
+      }
+    }
+
+    async renderMessagesSequentially(messages) {
+      // Handle very large histories by showing a loading indicator
+      const isLargeHistory = messages.length > 50;
+      let loadingMsg = null;
+      
+      if (isLargeHistory) {
+        // Show initial loading message for large histories
+        loadingMsg = document.createElement("div");
+        loadingMsg.id = "historyLoadingIndicator";
+        loadingMsg.className = "text-center py-4 text-slate-500 text-sm";
+        loadingMsg.innerHTML = `
+          <div class="flex items-center justify-center space-x-2">
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+            <span>Loading ${messages.length} messages...</span>
+          </div>
+        `;
+        this.elements.messagesContainer.appendChild(loadingMsg);
+      }
+      
+      // Render messages with a small delay for better UX on large histories
+      const batchSize = isLargeHistory ? 20 : 10;
+      const totalBatches = Math.ceil(messages.length / batchSize);
+      
+      for (let i = 0; i < messages.length; i += batchSize) {
+        const batch = messages.slice(i, i + batchSize);
+        const currentBatch = Math.floor(i / batchSize) + 1;
+        
+        batch.forEach(msg => {
+          // Validate message structure
+          if (msg && typeof msg.role === 'string' && typeof msg.content === 'string') {
+            this.messageRenderer.addMessage(
+              this.elements.messagesContainer,
+              msg.role,
+              msg.content,
+              null, // id
+              msg.role === 'assistant' ? this.providerManager.getCurrentProvider() : null, // providerName
+              msg.timestamp // timestamp
+            );
+          } else {
+            console.warn("Invalid message format:", msg);
+          }
+        });
+        
+        // Update progress for large histories
+        if (isLargeHistory && loadingMsg) {
+          const progress = Math.round((currentBatch / totalBatches) * 100);
+          loadingMsg.innerHTML = `
+            <div class="flex items-center justify-center space-x-2">
+              <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+              <span>Loading messages: ${progress}% (${i + batch.length}/${messages.length})</span>
+            </div>
+          `;
+        }
+        
+        // Small delay between batches for very large histories
+        if (i + batchSize < messages.length) {
+          await new Promise(resolve => setTimeout(resolve, isLargeHistory ? 30 : 50));
+        }
+      }
+      
+      // Remove loading indicator
+      if (loadingMsg) {
+        loadingMsg.remove();
+      }
+      
+      // Scroll to bottom after all messages are rendered
+      this.scrollToBottom();
+      
+      // Show completion message for very large histories
+      if (isLargeHistory) {
+        const completionMsg = document.createElement("div");
+        completionMsg.className = "text-center py-2 text-slate-400 text-xs fade-in";
+        completionMsg.textContent = `Loaded ${messages.length} messages`;
+        this.elements.messagesContainer.appendChild(completionMsg);
+        
+        // Fade out the completion message after 3 seconds
+        setTimeout(() => {
+          completionMsg.style.opacity = '0';
+          setTimeout(() => completionMsg.remove(), 300);
+        }, 3000);
+      }
+    }
+
+    scrollToBottom() {
+      if (this.elements.messagesContainer) {
+        this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
       }
     }
 

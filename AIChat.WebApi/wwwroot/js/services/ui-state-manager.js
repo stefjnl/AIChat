@@ -135,13 +135,96 @@
     }
 
     // Welcome screen management
-    showWelcome(show) {
+    showWelcome(show, forceShow = false) {
       const welcome = this.elements.welcomeScreen;
       if (!welcome) return;
+      
+      if (show && !forceShow) {
+        // Check if there are messages in the container
+        const hasMessages = this.elements.messagesContainer &&
+                           this.elements.messagesContainer.children.length > 0;
+        if (hasMessages) {
+          welcome.classList.add("hidden");
+          return;
+        }
+      }
       
       if (show) {
         welcome.classList.remove("hidden");
       } else {
+        welcome.classList.add("hidden");
+      }
+    }
+
+    // Loading state management
+    showLoadingState() {
+      this.hideWelcome(); // Hide welcome screen during loading
+      this.clearMessages();
+      
+      if (this.elements.messagesContainer) {
+        const loadingElement = document.createElement("div");
+        loadingElement.id = "loadingIndicator";
+        loadingElement.className = "flex items-center justify-center py-8";
+        loadingElement.innerHTML = `
+          <div class="flex items-center space-x-3 text-slate-500">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+            <span class="text-sm font-medium">Loading conversation history...</span>
+          </div>
+        `;
+        this.elements.messagesContainer.appendChild(loadingElement);
+      }
+    }
+
+    hideLoadingState() {
+      if (this.elements.messagesContainer) {
+        const loadingIndicator = this.elements.messagesContainer.querySelector("#loadingIndicator");
+        if (loadingIndicator) {
+          loadingIndicator.remove();
+        }
+      }
+    }
+
+    // Error state management
+    showError(message) {
+      this.hideLoadingState();
+      this.hideWelcome();
+      
+      if (this.elements.messagesContainer) {
+        const errorElement = document.createElement("div");
+        errorElement.id = "errorIndicator";
+        errorElement.className = "flex items-center justify-center py-8";
+        errorElement.innerHTML = `
+          <div class="flex flex-col items-center space-y-3 text-center max-w-md">
+            <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <div>
+              <p class="text-slate-700 font-medium">Error</p>
+              <p class="text-slate-500 text-sm mt-1">${DOMUtils.escapeHtml(message || "An error occurred")}</p>
+            </div>
+            <button onclick="this.parentElement.parentElement.remove()" class="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+              Dismiss
+            </button>
+          </div>
+        `;
+        this.elements.messagesContainer.appendChild(errorElement);
+      }
+    }
+
+    hideError() {
+      if (this.elements.messagesContainer) {
+        const errorIndicator = this.elements.messagesContainer.querySelector("#errorIndicator");
+        if (errorIndicator) {
+          errorIndicator.remove();
+        }
+      }
+    }
+
+    hideWelcome() {
+      const welcome = this.elements.welcomeScreen;
+      if (welcome) {
         welcome.classList.add("hidden");
       }
     }

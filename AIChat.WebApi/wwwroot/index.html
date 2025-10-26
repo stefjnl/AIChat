@@ -7,6 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <link rel="stylesheet" href="styles.css">
     <style>
         /* Custom scrollbar */
@@ -112,6 +114,35 @@
             overflow-x: auto;
             margin: 1em 0;
             border: 1px solid #e2e8f0;
+            position: relative;
+        }
+        
+        .markdown-content pre:hover .copy-button {
+            opacity: 1;
+        }
+        
+        .copy-button {
+            position: absolute;
+            top: 0.5em;
+            right: 0.5em;
+            background: #e2e8f0;
+            border: none;
+            border-radius: 0.25em;
+            padding: 0.25em 0.5em;
+            font-size: 0.75em;
+            color: #475569;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background-color 0.2s;
+        }
+        
+        .copy-button:hover {
+            background: #cbd5e1;
+        }
+        
+        .copy-button.copied {
+            background: #10b981;
+            color: white;
         }
         
         .markdown-content pre code {
@@ -242,7 +273,7 @@
         </header>
 
         <!-- Messages Container -->
-        <div id="chatHistory" class="flex-1 overflow-y-auto px-6 py-4 chat-history">
+        <div id="chatHistory" class="flex-1 overflow-y-auto px-6 py-4 pb-32 chat-history">
             <div class="max-w-3xl mx-auto">
                 <!-- Welcome Screen -->
                 <div id="welcomeScreen" class="flex items-center justify-center h-full">

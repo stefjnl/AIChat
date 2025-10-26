@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using AIChat.Infrastructure.Storage;
 using AIChat.Infrastructure.Models;
+using AIChat.WebApi.Models;
+using AIChat.WebApi.Services;
 
 namespace AIChat.WebApi.Controllers;
 
@@ -13,15 +15,18 @@ public class ChatHistoryController : ControllerBase
 {
     private readonly IChatHistoryStorage _chatHistoryStorage;
     private readonly IThreadStorage _threadStorage;
+    private readonly ITitleGenerator _titleGenerator;
     private readonly ILogger<ChatHistoryController> _logger;
 
     public ChatHistoryController(
         IChatHistoryStorage chatHistoryStorage,
         IThreadStorage threadStorage,
+        ITitleGenerator titleGenerator,
         ILogger<ChatHistoryController> logger)
     {
         _chatHistoryStorage = chatHistoryStorage;
         _threadStorage = threadStorage;
+        _titleGenerator = titleGenerator;
         _logger = logger;
     }
 
@@ -47,6 +52,34 @@ public class ChatHistoryController : ControllerBase
         {
             _logger.LogError(ex, "Error retrieving chat history");
             return StatusCode(500, new { error = "Failed to retrieve chat history" });
+        }
+    }
+
+    /// <summary>
+    /// Create a new chat history item
+    /// </summary>
+    [HttpPost]
+    public async Task<IActionResult> CreateChatHistoryItem([FromBody] CreateChatHistoryRequest request)
+    {
+        try
+        {
+            var item = new ChatHistoryItem
+            {
+                ThreadId = request.ThreadId,
+                Title = request.Title,
+                CreatedAt = request.CreatedAt ?? DateTime.UtcNow,
+                LastUpdatedAt = request.LastUpdatedAt ?? DateTime.UtcNow,
+                MessageCount = request.MessageCount,
+                IsActive = request.IsActive
+            };
+
+            await _chatHistoryStorage.SaveChatHistoryItemAsync(item);
+            return CreatedAtAction(nameof(GetChatHistoryItem), new { threadId = item.ThreadId }, item);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating chat history item: {ThreadId}", request.ThreadId);
+            return StatusCode(500, new { error = "Failed to create chat history item" });
         }
     }
 
@@ -191,19 +224,14 @@ public class ChatHistoryController : ControllerBase
     }
 
     /// <summary>
-    /// Generate an auto-title from a message
+    /// Generate an auto-title from a message with enhanced context
     /// </summary>
     [HttpPost("generate-title")]
-    public IActionResult GenerateAutoTitle([FromBody] string message)
+    public IActionResult GenerateAutoTitle([FromBody] GenerateTitleRequest request)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return BadRequest(new { error = "Message is required" });
-            }
-
-            var title = _chatHistoryStorage.GenerateAutoTitle(message);
+            string title = _titleGenerator.GenerateTitle(request);
             return Ok(new { title });
         }
         catch (Exception ex)
