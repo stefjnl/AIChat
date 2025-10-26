@@ -12,6 +12,10 @@
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251016.1" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.251016.1" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
