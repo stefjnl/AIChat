@@ -161,6 +161,10 @@ app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
 
 // Map root endpoint to serve the chat interface
-app.MapGet("/", () => Results.File("wwwroot/index.html", "text/html"));
+app.MapGet("/", (IWebHostEnvironment env) =>
+{
+    var filePath = Path.Combine(env.ContentRootPath, "wwwroot", "index.html");
+    return Results.File(filePath, "text/html");
+});
 
 app.Run();
