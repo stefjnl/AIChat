@@ -143,7 +143,7 @@
       container.innerHTML = "";
       threadIds.forEach(id => {
         const item = document.createElement("div");
-        item.className = "p-2 rounded-lg hover:bg-gray-100 cursor-pointer text-sm text-gray-700";
+        item.className = "chat-item p-3 rounded-lg hover:bg-slate-100 cursor-pointer text-sm text-slate-700 transition-all duration-200";
         item.textContent = `Thread ${id.slice(0, 8)}...`;
         item.dataset.threadId = id;
         item.addEventListener("click", () => this.selectThread(id));
@@ -416,7 +416,7 @@
       const hint = document.getElementById("charHint");
       if (!hint) return;
       const text = this.elements.messageInput.value || "";
-      hint.textContent = `${text.length} / 4000 characters`;
+      hint.textContent = `${text.length} / 4000`;
     }
 
     formatDuration(ms) {
