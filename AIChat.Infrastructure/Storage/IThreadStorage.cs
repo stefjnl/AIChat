@@ -7,5 +7,6 @@ public interface IThreadStorage
     Task<JsonElement?> LoadThreadAsync(string threadId, CancellationToken ct = default);
     Task SaveThreadAsync(string threadId, JsonElement threadData, CancellationToken ct = default);
     Task<bool> ThreadExistsAsync(string threadId, CancellationToken ct = default);
+    Task<IEnumerable<string>> ListThreadIdsAsync(CancellationToken ct = default);
     string CreateNewThreadId();
 }
