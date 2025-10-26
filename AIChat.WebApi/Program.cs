@@ -5,6 +5,10 @@ using AIChat.Infrastructure.Configuration;
 using AIChat.Infrastructure.Storage;
 using AIChat.WebApi.Services;
 using AIChat.WebApi.Hubs;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
+using Azure.Monitor.OpenTelemetry.Exporter;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -133,6 +137,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddSingleton<ITitleGenerator, TitleGenerationService>();
 builder.Services.AddSingleton<TextAnalysisService>();
 
+// Register telemetry service
+builder.Services.AddSingleton<TelemetryService>();
+
+// Register telemetry broadcast service
+builder.Services.AddHostedService<TelemetryBroadcastService>();
+
 // Controllers
 builder.Services.AddControllers();
 
@@ -148,6 +158,90 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
+});
+
+// ============================================================
+// OPENTELEMETRY CONFIGURATION
+// ============================================================
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.AddSource("Microsoft.Extensions.AI")
+               .AddSource("Microsoft.Agents.AI")
+               .AddSource("agent-telemetry-source"); // For custom agent telemetry
+        
+        // Add ASP.NET Core instrumentation
+        tracing.AddAspNetCoreInstrumentation();
+        
+        // Add HttpClient instrumentation for external API calls
+        tracing.AddHttpClientInstrumentation();
+        
+        // Configure exporters based on environment
+        if (builder.Environment.IsDevelopment())
+        {
+            tracing.AddConsoleExporter();
+        }
+        else
+        {
+            // For production, use Azure Monitor or OTLP
+            var connectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+            if (!string.IsNullOrEmpty(connectionString))
+            {
+                tracing.AddAzureMonitorTraceExporter(options =>
+                {
+                    options.ConnectionString = connectionString;
+                });
+            }
+            else
+            {
+                // Fallback to OTLP
+                tracing.AddOtlpExporter();
+            }
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics.AddAspNetCoreInstrumentation()
+               .AddHttpClientInstrumentation()
+               .AddMeter("Microsoft.Extensions.AI")
+               .AddMeter("Microsoft.Agents.AI");
+        
+        // Configure metric exporters
+        if (builder.Environment.IsDevelopment())
+        {
+            metrics.AddConsoleExporter();
+        }
+        else
+        {
+            var connectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+            if (!string.IsNullOrEmpty(connectionString))
+            {
+                metrics.AddAzureMonitorMetricExporter(options =>
+                {
+                    options.ConnectionString = connectionString;
+                });
+            }
+        }
+    });
+
+// Configure logging to integrate with OpenTelemetry
+builder.Logging.AddOpenTelemetry(logging =>
+{
+    logging.IncludeFormattedMessage = true;
+    logging.IncludeScopes = true;
+    
+    if (!builder.Environment.IsDevelopment())
+    {
+        var connectionString = builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"];
+        if (!string.IsNullOrEmpty(connectionString))
+        {
+            logging.AddAzureMonitorLogExporter(options =>
+            {
+                options.ConnectionString = connectionString;
+            });
+        }
+    }
 });
 
 // ============================================================
@@ -172,6 +266,7 @@ app.MapControllers();
 
 // SignalR Hub
 app.MapHub<ChatHub>("/chathub");
+app.MapHub<TelemetryHub>("/telemetryhub");
 
 // Map root endpoint to serve the chat interface
 app.MapGet("/", (IWebHostEnvironment env) =>
