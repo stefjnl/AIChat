@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>eaa81d56-a931-4dee-8690-9f4a83916d1b</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="9.5.2" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251016.1" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.251016.1" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AIChat.Agents\AIChat.Agents.csproj" />
+    <ProjectReference Include="..\AIChat.Infrastructure\AIChat.Infrastructure.csproj" />
+    <ProjectReference Include="..\AIChat.Shared\AIChat.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
