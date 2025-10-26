@@ -219,7 +219,10 @@
       this.messageRenderer.addMessage(
         this.elements.messagesContainer,
         "user",
-        message
+        message,
+        null, // id
+        null, // providerName
+        new Date().toISOString() // timestamp
       );
       
       // 2. Assistant placeholder
@@ -437,7 +440,10 @@
             this.messageRenderer.addMessage(
               this.elements.messagesContainer,
               msg.role,
-              msg.content
+              msg.content,
+              null, // id
+              msg.role === 'assistant' ? this.providerManager.getCurrentProvider() : null, // providerName
+              msg.timestamp // timestamp
             );
           } else {
             console.warn("Invalid message format:", msg);

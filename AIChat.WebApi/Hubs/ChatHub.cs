@@ -114,6 +114,7 @@ public class ChatHub : Hub
 
         // Add the new user message to conversation history
         var userMessage = new ChatMessage(ChatRole.User, message);
+        var userTimestamp = DateTime.UtcNow;
         conversationHistory.Add(userMessage);
 
         // Stream response from agent using full conversation history
@@ -325,16 +326,39 @@ public class ChatHub : Hub
     {
         try
         {
+            // Load existing thread data to preserve timestamps
+            var existingData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
+            var existingTimestamps = new Dictionary<int, DateTime>();
+            
+            if (existingData.HasValue && existingData.Value.TryGetProperty("messages", out var existingMessages))
+            {
+                var index = 0;
+                foreach (var msg in existingMessages.EnumerateArray())
+                {
+                    if (msg.TryGetProperty("timestamp", out var timestampProperty) && 
+                        timestampProperty.ValueKind == JsonValueKind.String &&
+                        DateTime.TryParse(timestampProperty.GetString(), out var timestamp))
+                    {
+                        existingTimestamps[index] = timestamp;
+                    }
+                    index++;
+                }
+            }
+
             // Create thread data structure with conversation history
+            var now = DateTime.UtcNow;
             var threadData = new
             {
                 threadId = threadId,
                 created = DateTime.UtcNow,
                 provider = agent.Name,
-                messages = conversationHistory.Select(msg => new
+                messages = conversationHistory.Select((msg, index) => new
                 {
                     role = msg.Role.ToString().ToLowerInvariant(),
-                    content = msg.Text
+                    content = msg.Text,
+                    timestamp = existingTimestamps.TryGetValue(index, out var existingTimestamp) 
+                        ? existingTimestamp 
+                        : now
                 }).ToArray()
             };
 
