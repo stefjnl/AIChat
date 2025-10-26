@@ -82,6 +82,9 @@ builder.Services.AddSingleton(storageConfig);
 // Thread storage for conversation persistence
 builder.Services.AddSingleton<IThreadStorage, FileThreadStorage>();
 
+// Chat history storage for enhanced history management
+builder.Services.AddSingleton<IChatHistoryStorage, FileChatHistoryStorage>();
+
 // Provider client factory
 builder.Services.AddSingleton<ProviderClientFactory>();
 

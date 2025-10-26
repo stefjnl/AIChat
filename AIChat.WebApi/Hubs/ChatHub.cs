@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using AIChat.Infrastructure.Storage;
+using AIChat.Infrastructure.Models;
 using AIChat.Shared.Models;
 using System.Runtime.CompilerServices;
 
@@ -14,15 +15,18 @@ public class ChatHub : Hub
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IThreadStorage _threadStorage;
+    private readonly IChatHistoryStorage _chatHistoryStorage;
     private readonly ILogger<ChatHub> _logger;
 
     public ChatHub(
         IServiceProvider serviceProvider,
         IThreadStorage threadStorage,
+        IChatHistoryStorage chatHistoryStorage,
         ILogger<ChatHub> logger)
     {
         _serviceProvider = serviceProvider;
         _threadStorage = threadStorage;
+        _chatHistoryStorage = chatHistoryStorage;
         _logger = logger;
     }
 
@@ -216,10 +220,13 @@ public class ChatHub : Hub
         try
         {
             await SaveThreadAsync(agent, thread, threadId, cancellationToken);
+            
+            // Update chat history metadata and notify clients
+            await UpdateChatHistoryAsync(threadId, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save thread: {ThreadId}", threadId);
+            _logger.LogError(ex, "Failed to save thread or update chat history: {ThreadId}", threadId);
         }
 
         // Send final chunk with usage and thread ID
@@ -291,6 +298,88 @@ public class ChatHub : Hub
         {
             _logger.LogError(ex, "Failed to save thread: {ThreadId}", threadId);
             // Don't throw - we don't want to fail the response if save fails
+        }
+    }
+
+    /// <summary>
+    /// Update chat history and notify all connected clients
+    /// </summary>
+    private async Task UpdateChatHistoryAsync(string threadId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Update thread metadata in chat history
+            var threadData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
+            if (threadData.HasValue)
+            {
+                await _chatHistoryStorage.UpdateThreadMetadataAsync(threadId, threadData.Value, cancellationToken);
+            }
+            
+            // Notify all connected clients about the chat history update
+            var historyItem = await _chatHistoryStorage.GetChatHistoryItemAsync(threadId, cancellationToken);
+            if (historyItem != null)
+            {
+                await Clients.All.SendAsync("ChatHistoryUpdated", historyItem, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating chat history for thread: {ThreadId}", threadId);
+        }
+    }
+
+    /// <summary>
+    /// Get chat history for the connected client
+    /// </summary>
+    public async Task<List<AIChat.Infrastructure.Models.ChatHistoryItem>> GetChatHistory()
+    {
+        try
+        {
+            return await _chatHistoryStorage.GetChatHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving chat history for client: {ConnectionId}", Context.ConnectionId);
+            return new List<AIChat.Infrastructure.Models.ChatHistoryItem>();
+        }
+    }
+
+    /// <summary>
+    /// Set active thread for the connected client
+    /// </summary>
+    public async Task<bool> SetActiveThread(string threadId)
+    {
+        try
+        {
+            await _chatHistoryStorage.SetActiveThreadAsync(threadId);
+            await Clients.All.SendAsync("ActiveThreadChanged", threadId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting active thread: {ThreadId}", threadId);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Delete a chat history item
+    /// </summary>
+    public async Task<bool> DeleteChatHistoryItem(string threadId)
+    {
+        try
+        {
+            var success = await _chatHistoryStorage.DeleteChatHistoryItemAsync(threadId);
+            if (success)
+            {
+                await Clients.All.SendAsync("ChatHistoryItemDeleted", threadId);
+            }
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting chat history item: {ThreadId}", threadId);
+            return false;
         }
     }
 

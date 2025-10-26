@@ -10,6 +10,8 @@
       this.streamStartTime = null;
       this.accumulatedTokens = { input: 0, output: 0 };
       this.providerMap = new Map();
+      this.chatHistory = [];
+      this.activeThreadId = null;
       const byId = (id) => document.getElementById(id);
       this.elements = {
         providerSelect: byId("providerSelect"),
@@ -35,7 +37,7 @@
     async init() {
       await this.restoreThreadFromStorage();
       await this.loadProviders();
-      await this.loadThreads();
+      await this.loadChatHistory();
       await this.setupSignalR();
       this.setupEventListeners();
       this.updateCharHint();
@@ -82,9 +84,24 @@
       });
       this.connection.onreconnected(() => {
         this.hideReconnecting();
+        // Reload chat history after reconnection
+        this.loadChatHistory();
       });
       this.connection.onclose(() => {
         this.showDisconnected();
+      });
+
+      // Chat history real-time updates
+      this.connection.on("ChatHistoryUpdated", (historyItem) => {
+        this.updateChatHistoryItem(historyItem);
+      });
+
+      this.connection.on("ChatHistoryItemDeleted", (threadId) => {
+        this.removeChatHistoryItem(threadId);
+      });
+
+      this.connection.on("ActiveThreadChanged", (threadId) => {
+        this.updateActiveThread(threadId);
       });
 
       try {
@@ -127,36 +144,117 @@
       els.newChatBtn.addEventListener("click", () => this.createNewThread());
     }
 
-    async loadThreads() {
+    async loadChatHistory() {
+      try {
+        // Try to get from SignalR first for real-time updates
+        if (this.connection && this.connection.state === signalR.HubConnectionState.Connected) {
+          this.chatHistory = await this.connection.invoke("GetChatHistory");
+        } else {
+          // Fallback to REST API
+          const res = await fetch("/api/chathistory");
+          if (!res.ok) throw new Error("Failed to load chat history");
+          const data = await res.json();
+          this.chatHistory = data.items || [];
+        }
+        this.displayChatHistory();
+      } catch (err) {
+        console.error("Error loading chat history:", err);
+        // Fallback to basic thread list if chat history fails
+        await this.loadThreadsFallback();
+      }
+    }
+
+    async loadThreadsFallback() {
       try {
         const res = await fetch("/api/threads/list");
         if (!res.ok) throw new Error("Failed to load threads");
         const data = await res.json();
-        this.displayThreads(data.threadIds || []);
+        // Convert thread IDs to basic chat history items
+        this.chatHistory = (data.threadIds || []).map(id => ({
+          threadId: id,
+          title: `Thread ${id.slice(0, 8)}...`,
+          createdAt: new Date(),
+          lastUpdatedAt: new Date(),
+          messageCount: 0,
+          isActive: id === this.currentThreadId
+        }));
+        this.displayChatHistory();
       } catch (err) {
-        console.error(err);
+        console.error("Error loading fallback threads:", err);
       }
     }
 
-    displayThreads(threadIds) {
+    displayChatHistory() {
       const container = this.elements.chatHistoryList;
       container.innerHTML = "";
-      threadIds.forEach(id => {
-        const item = document.createElement("div");
-        item.className = "chat-item p-3 rounded-lg hover:bg-slate-100 cursor-pointer text-sm text-slate-700 transition-all duration-200";
-        item.textContent = `Thread ${id.slice(0, 8)}...`;
-        item.dataset.threadId = id;
-        item.addEventListener("click", () => this.selectThread(id));
-        container.appendChild(item);
+      
+      // Sort by last updated (newest first)
+      const sortedHistory = this.chatHistory.sort((a, b) =>
+        new Date(b.lastUpdatedAt) - new Date(a.lastUpdatedAt)
+      );
+
+      sortedHistory.forEach(item => {
+        const historyItem = document.createElement("div");
+        historyItem.className = `chat-item p-3 rounded-lg hover:bg-slate-100 cursor-pointer text-sm transition-all duration-200 ${
+          item.isActive ? 'bg-indigo-50 border border-indigo-200' : 'text-slate-700'
+        }`;
+        
+        // Format timestamp
+        const timestamp = this.formatTimestamp(item.lastUpdatedAt);
+        
+        historyItem.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-slate-800 truncate">${this.escapeHtml(item.title)}</div>
+              <div class="text-xs text-slate-500 mt-1">${timestamp}</div>
+            </div>
+            <div class="flex items-center space-x-1 ml-2">
+              ${item.messageCount > 0 ? `<span class="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-full">${item.messageCount}</span>` : ''}
+              <button class="delete-btn opacity-0 hover:opacity-100 text-red-500 hover:text-red-700 p-1 rounded" data-thread-id="${item.threadId}">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        `;
+        
+        // Click to select thread
+        historyItem.addEventListener("click", (e) => {
+          if (!e.target.closest('.delete-btn')) {
+            this.selectThread(item.threadId);
+          }
+        });
+        
+        // Delete button
+        const deleteBtn = historyItem.querySelector('.delete-btn');
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.deleteChatHistoryItem(item.threadId);
+        });
+        
+        container.appendChild(historyItem);
       });
     }
 
     async selectThread(threadId) {
-      this.currentThreadId = threadId;
-      this.saveThreadToStorage();
-      this.clearMessages();
-      this.showWelcome(true);
-      this.resetStats();
+      try {
+        // Set active thread via SignalR for real-time sync
+        if (this.connection && this.connection.state === signalR.HubConnectionState.Connected) {
+          await this.connection.invoke("SetActiveThread", threadId);
+        }
+        
+        this.currentThreadId = threadId;
+        this.saveThreadToStorage();
+        this.clearMessages();
+        this.showWelcome(true);
+        this.resetStats();
+        
+        // Update UI to reflect active thread
+        this.updateActiveThread(threadId);
+      } catch (err) {
+        console.error("Error selecting thread:", err);
+      }
     }
 
     async createNewThread() {
@@ -169,9 +267,13 @@
         this.clearMessages();
         this.showWelcome(true);
         this.resetStats();
-        await this.loadThreads(); // Reload the thread list
+        
+        // Create initial chat history item
+        if (this.currentThreadId) {
+          await this.createChatHistoryItem(this.currentThreadId, "New Chat");
+        }
       } catch (err) {
-        console.error(err);
+        console.error("Error creating new thread:", err);
       }
     }
 
@@ -248,6 +350,33 @@
       if (!this.currentThreadId) {
         await this.createNewThread();
       }
+      
+      // Generate auto-title from first user message
+      if (this.currentThreadId && this.chatHistory.find(h => h.threadId === this.currentThreadId)?.title === "New Chat") {
+        try {
+          const response = await fetch("/api/chathistory/generate-title", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(message)
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const title = data.title;
+            
+            // Update the chat history item
+            const historyItem = this.chatHistory.find(h => h.threadId === this.currentThreadId);
+            if (historyItem) {
+              historyItem.title = title;
+              historyItem.firstUserMessage = message;
+              this.displayChatHistory();
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to generate auto-title:", err);
+        }
+      }
+      
       // 1. Add user message
       this.addMessage("user", message);
       // 2. Assistant placeholder
@@ -446,14 +575,9 @@
     }
 
     escapeHtml(text) {
-      const map = {
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "\"": "&quot;",
-        "'": '&#039;'
-      };
-      return String(text).replace(/[&<>"']/g, (m) => map[m]);
+      const div = document.createElement('div');
+      div.textContent = String(text);
+      return div.innerHTML;
     }
 
     async restoreThreadFromStorage() {
@@ -481,6 +605,99 @@
       } catch {
         /* ignore */
       }
+    }
+
+    // Chat history helper methods
+    async createChatHistoryItem(threadId, title) {
+      try {
+        const response = await fetch("/api/chathistory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId,
+            title,
+            createdAt: new Date().toISOString(),
+            lastUpdatedAt: new Date().toISOString(),
+            messageCount: 0,
+            isActive: true
+          })
+        });
+        
+        if (!response.ok) {
+          console.warn("Failed to create chat history item");
+        }
+      } catch (err) {
+        console.error("Error creating chat history item:", err);
+      }
+    }
+
+    async deleteChatHistoryItem(threadId) {
+      try {
+        const confirmed = confirm("Are you sure you want to delete this chat?");
+        if (!confirmed) return;
+
+        // Delete via SignalR for real-time sync
+        if (this.connection && this.connection.state === signalR.HubConnectionState.Connected) {
+          const success = await this.connection.invoke("DeleteChatHistoryItem", threadId);
+          if (success) {
+            this.removeChatHistoryItem(threadId);
+          }
+        } else {
+          // Fallback to REST API
+          const response = await fetch(`/api/chathistory/${threadId}`, { method: "DELETE" });
+          if (response.ok) {
+            this.removeChatHistoryItem(threadId);
+          }
+        }
+      } catch (err) {
+        console.error("Error deleting chat history item:", err);
+      }
+    }
+
+    updateChatHistoryItem(updatedItem) {
+      const index = this.chatHistory.findIndex(item => item.threadId === updatedItem.threadId);
+      if (index >= 0) {
+        this.chatHistory[index] = updatedItem;
+      } else {
+        this.chatHistory.push(updatedItem);
+      }
+      this.displayChatHistory();
+    }
+
+    removeChatHistoryItem(threadId) {
+      this.chatHistory = this.chatHistory.filter(item => item.threadId !== threadId);
+      this.displayChatHistory();
+      
+      // If we deleted the current active thread, clear it
+      if (this.currentThreadId === threadId) {
+        this.currentThreadId = null;
+        this.saveThreadToStorage();
+        this.clearMessages();
+        this.showWelcome(true);
+      }
+    }
+
+    updateActiveThread(threadId) {
+      this.chatHistory.forEach(item => {
+        item.isActive = item.threadId === threadId;
+      });
+      this.displayChatHistory();
+    }
+
+    formatTimestamp(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return "Just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+      
+      return date.toLocaleDateString();
     }
   }
 
