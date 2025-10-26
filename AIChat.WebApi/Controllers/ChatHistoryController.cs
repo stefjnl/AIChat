@@ -483,7 +483,7 @@ public class ChatHistoryController : ControllerBase
         // Remove question mark and clean up
         question = question.Replace("?", "").Trim();
         
-        return !string.IsNullOrEmpty(question) && question.Length > 0 ? question : string.Empty;
+        return !string.IsNullOrEmpty(question) ? question : string.Empty;
     }
 
     /// <summary>
