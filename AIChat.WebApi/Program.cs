@@ -123,6 +123,16 @@ if (providersConfig?.Providers != null && providersConfig.Providers.Count > 0)
 // WEB SERVICES
 // ============================================================
 
+// Configure JSON serialization to use camelCase
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+});
+
+// Register title generation service
+builder.Services.AddSingleton<ITitleGenerator, TitleGenerationService>();
+builder.Services.AddSingleton<TextAnalysisService>();
+
 // Controllers
 builder.Services.AddControllers();
 

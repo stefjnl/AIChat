@@ -105,7 +105,7 @@
       const lowerMessage = message.toLowerCase();
       
       // Check for questions
-      if (message.includes('?') || questionIndicators.some(indicator => lowerMessage.startsWith(indicator + ' ') || lowerMessage.includes(' ' + indicator + ' '))) {
+      if (this.isQuestion(message, lowerMessage, questionIndicators)) {
         return 'question';
       }
       
@@ -115,6 +115,15 @@
       }
       
       return 'statement';
+    }
+
+    // Helper method to check if a message contains question indicators
+    isQuestion(message, lowerMessage, questionIndicators) {
+      return message.includes('?') || 
+             questionIndicators.some(indicator => 
+               lowerMessage.startsWith(indicator + ' ') || 
+               lowerMessage.includes(' ' + indicator + ' ')
+             );
     }
 
     // Extract important keywords from the messages

@@ -117,6 +117,12 @@ public class ChatHub : Hub
         var userTimestamp = DateTime.UtcNow;
         conversationHistory.Add(userMessage);
 
+        // Track timestamp for the new user message
+        var newMessageTimestamps = new Dictionary<int, DateTime>
+        {
+            { conversationHistory.Count - 1, userTimestamp }
+        };
+
         // Stream response from agent using full conversation history
         var chunks = new List<ChatChunk>();
         string fullResponse = "";
@@ -195,7 +201,9 @@ public class ChatHub : Hub
         if (!string.IsNullOrWhiteSpace(fullResponse))
         {
             var assistantMessage = new ChatMessage(ChatRole.Assistant, fullResponse);
+            var assistantTimestamp = DateTime.UtcNow;
             conversationHistory.Add(assistantMessage);
+            newMessageTimestamps[conversationHistory.Count - 1] = assistantTimestamp;
         }
 
         // Yield all collected chunks
@@ -207,7 +215,7 @@ public class ChatHub : Hub
         // Save thread with updated conversation history
         try
         {
-            await SaveThreadWithHistoryAsync(agent, thread, threadId, conversationHistory, cancellationToken);
+            await SaveThreadWithHistoryAsync(agent, thread, threadId, conversationHistory, newMessageTimestamps, cancellationToken);
             
             // Update chat history metadata and notify clients
             await UpdateChatHistoryAsync(threadId, cancellationToken);
@@ -322,6 +330,7 @@ public class ChatHub : Hub
         AgentThread thread,
         string threadId,
         List<ChatMessage> conversationHistory,
+        Dictionary<int, DateTime> newMessageTimestamps,
         CancellationToken cancellationToken)
     {
         try
@@ -358,7 +367,9 @@ public class ChatHub : Hub
                     content = msg.Text,
                     timestamp = existingTimestamps.TryGetValue(index, out var existingTimestamp) 
                         ? existingTimestamp 
-                        : now
+                        : newMessageTimestamps.TryGetValue(index, out var newTimestamp)
+                            ? newTimestamp
+                            : now
                 }).ToArray()
             };
 

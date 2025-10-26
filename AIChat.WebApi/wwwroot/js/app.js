@@ -411,10 +411,11 @@
     async renderMessagesSequentially(messages) {
       // Handle very large histories by showing a loading indicator
       const isLargeHistory = messages.length > 50;
+      let loadingMsg = null;
       
       if (isLargeHistory) {
         // Show initial loading message for large histories
-        const loadingMsg = document.createElement("div");
+        loadingMsg = document.createElement("div");
         loadingMsg.id = "historyLoadingIndicator";
         loadingMsg.className = "text-center py-4 text-slate-500 text-sm";
         loadingMsg.innerHTML = `

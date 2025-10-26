@@ -55,7 +55,9 @@
         if (!e.target.closest('.delete-btn')) {
           // Add loading state to the clicked item
           this.setItemLoadingState(historyItem, true);
-          onSelect(item.threadId);
+          if (typeof onSelect === 'function') {
+            onSelect(item.threadId);
+          }
         }
       });
       
@@ -64,7 +66,9 @@
       if (deleteBtn) {
         deleteBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          onDelete(item.threadId);
+          if (typeof onDelete === 'function') {
+            onDelete(item.threadId);
+          }
         });
       }
     }
