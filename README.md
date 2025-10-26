@@ -37,6 +37,10 @@ AIChat/
 - **xUnit**: Testing framework
 - **Docker**: Containerization support
 
+<img width="2557" height="1248" alt="afbeelding" src="https://github.com/user-attachments/assets/f4aee165-f5fd-423f-b967-f8c401e93e02" />
+
+<img width="2557" height="1252" alt="afbeelding" src="https://github.com/user-attachments/assets/7fe61f57-c9c4-4100-8390-476e69f1b5cf" />
+
 ## 📋 Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
