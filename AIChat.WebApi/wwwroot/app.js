@@ -181,6 +181,7 @@
       const wrap = document.createElement("div");
       wrap.className = role === "user" ? "flex justify-end mb-4" : "flex items-start space-x-4 mb-4";
       wrap.dataset.messageId = msgId;
+      this.isAIMessage = role === "assistant"; // Set flag for markdown parsing
 
       if (role === "user") {
         const inner = document.createElement("div");
@@ -207,7 +208,7 @@
         providerLine.className = "text-xs text-gray-500 mb-1";
         providerLine.textContent = this.currentProvider || "";
         const p = document.createElement("p");
-        p.className = "text-gray-800 leading-relaxed msg-text";
+        p.className = "text-gray-800 leading-relaxed msg-text markdown-content";
         p.innerHTML = this.toHtml(content);
         bubble.appendChild(providerLine);
         bubble.appendChild(p);
@@ -226,7 +227,12 @@
       const el = Array.from(container.children).find(div => div.dataset.messageId === id);
       if (!el) return;
       const p = el.querySelector(".msg-text");
-      if (p) p.innerHTML = this.toHtml(content);
+      if (p) {
+        // Check if this is an AI message by looking at the avatar or message structure
+        const isAI = el.querySelector('.bg-indigo-500') !== null;
+        this.isAIMessage = isAI;
+        p.innerHTML = this.toHtml(content);
+      }
       this.scrollToBottom();
     }
 
@@ -426,6 +432,16 @@
 
     toHtml(text) {
       const t = String(text ?? "");
+      // For AI messages, use markdown parsing
+      if (this.isAIMessage && typeof marked !== 'undefined') {
+        try {
+          return marked.parse(t);
+        } catch (e) {
+          console.warn('Markdown parsing failed, falling back to basic HTML', e);
+          return this.escapeHtml(t).replace(/\n/g, "<br>");
+        }
+      }
+      // For user messages, use basic HTML escaping
       return this.escapeHtml(t).replace(/\n/g, "<br>");
     }
 
