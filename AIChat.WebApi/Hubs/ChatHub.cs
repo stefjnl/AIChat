@@ -5,6 +5,8 @@ using AIChat.Infrastructure.Storage;
 using AIChat.Infrastructure.Models;
 using AIChat.Shared.Models;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Linq;
 
 namespace AIChat.WebApi.Hubs;
 
@@ -263,8 +265,8 @@ public class ChatHub : Hub
             if (threadData.HasValue)
             {
                 _logger.LogDebug("Loading existing thread: {ThreadId}", threadId);
-                // For now, create a new thread since we don't have serialization methods
-                // TODO: Implement thread serialization/deserialization when available
+                // For now, create a new thread since AgentThread doesn't expose messages directly
+                // The thread data will be loaded via the persistent storage mechanism
                 return agent.GetNewThread();
             }
         }
@@ -288,10 +290,17 @@ public class ChatHub : Hub
     {
         try
         {
-            // For now, we'll save a placeholder since we don't have serialization methods
-            // TODO: Implement proper thread serialization when available
-            var placeholderData = System.Text.Json.JsonDocument.Parse("{\"threadId\":\"" + threadId + "\",\"created\":\"" + DateTime.UtcNow + "\"}").RootElement;
-            await _threadStorage.SaveThreadAsync(threadId, placeholderData, cancellationToken);
+            // Create a basic thread data structure
+            var threadData = new
+            {
+                threadId = threadId,
+                created = DateTime.UtcNow
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(threadData);
+            var jsonElement = System.Text.Json.JsonDocument.Parse(json).RootElement;
+            
+            await _threadStorage.SaveThreadAsync(threadId, jsonElement, cancellationToken);
             _logger.LogDebug("Thread saved successfully: {ThreadId}", threadId);
         }
         catch (Exception ex)

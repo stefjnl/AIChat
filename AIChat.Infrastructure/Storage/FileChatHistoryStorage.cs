@@ -119,7 +119,7 @@ public class FileChatHistoryStorage : IChatHistoryStorage
     public string GenerateAutoTitle(string firstUserMessage)
     {
         if (string.IsNullOrWhiteSpace(firstUserMessage))
-            return "New Chat";
+            return "New Conversation";
 
         // Clean the message
         var cleanMessage = firstUserMessage.Trim();
@@ -128,12 +128,12 @@ public class FileChatHistoryStorage : IChatHistoryStorage
         if (cleanMessage.Length <= 30)
             return cleanMessage;
 
-        // Take first 30 characters and add ellipsis
-        var title = cleanMessage.Substring(0, 30).Trim();
+        // Take first 50 characters and add ellipsis for better context
+        var title = cleanMessage.Substring(0, Math.Min(50, cleanMessage.Length)).Trim();
         
         // Ensure we don't cut off in the middle of a word
         var lastSpace = title.LastIndexOf(' ');
-        if (lastSpace > 20)
+        if (lastSpace > 40)
             title = title.Substring(0, lastSpace);
         
         return title + "...";
@@ -194,7 +194,7 @@ public class FileChatHistoryStorage : IChatHistoryStorage
                     ThreadId = threadId,
                     CreatedAt = DateTime.UtcNow,
                     LastUpdatedAt = DateTime.UtcNow,
-                    Title = "New Chat",
+                    Title = "New Conversation",
                     MessageCount = 0
                 };
             }

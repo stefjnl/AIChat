@@ -1,6 +1,5 @@
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using AIChat.Infrastructure.Models;
+using System.Text.Json;
 
 namespace AIChat.Infrastructure.Storage;
 
