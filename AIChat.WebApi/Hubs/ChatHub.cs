@@ -105,21 +105,24 @@ public class ChatHub : Hub
 
         agent = resolvedAgent!;
 
-        // Load or create thread
+        // Load or create thread with conversation history
         threadId ??= _threadStorage.CreateNewThreadId();
-        thread = await LoadOrCreateThreadAsync(agent, threadId, cancellationToken);
+        var (loadedThread, conversationHistory) = await LoadOrCreateThreadWithHistoryAsync(agent, threadId, cancellationToken);
 
-        _logger.LogDebug("Using thread: {ThreadId}", threadId);
+        thread = loadedThread;
+        _logger.LogDebug("Using thread: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
 
-        // Stream response from agent
+        // Add the new user message to conversation history
+        var userMessage = new ChatMessage(ChatRole.User, message);
+        conversationHistory.Add(userMessage);
+
+        // Stream response from agent using full conversation history
         var chunks = new List<ChatChunk>();
+        string fullResponse = "";
         
         try
         {
-            // Create chat message
-            var chatMessage = new ChatMessage(ChatRole.User, message);
-            
-            await foreach (var update in agent.RunStreamingAsync(chatMessage))
+            await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
             {
                 // Check for usage information
                 var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
@@ -142,6 +145,7 @@ public class ChatHub : Hub
                         IsFinal = false,
                         ThreadId = threadId
                     });
+                    fullResponse += update.Text;
                 }
             }
         }
@@ -186,42 +190,23 @@ public class ChatHub : Hub
             yield break;
         }
 
+        // Add the assistant's response to conversation history
+        if (!string.IsNullOrWhiteSpace(fullResponse))
+        {
+            var assistantMessage = new ChatMessage(ChatRole.Assistant, fullResponse);
+            conversationHistory.Add(assistantMessage);
+        }
+
         // Yield all collected chunks
         foreach (var chunk in chunks)
         {
             yield return chunk;
         }
 
-        // Handle exceptions
-        if (streamException != null)
-        {
-            if (streamException is OperationCanceledException)
-            {
-                yield return new ChatChunk
-                {
-                    Text = null,
-                    IsFinal = true,
-                    ThreadId = threadId,
-                    Error = "Request cancelled"
-                };
-            }
-            else
-            {
-                yield return new ChatChunk
-                {
-                    Text = null,
-                    IsFinal = true,
-                    ThreadId = threadId,
-                    Error = $"Error: {streamException.Message}"
-                };
-            }
-            yield break;
-        }
-
-        // Save thread after successful completion
+        // Save thread with updated conversation history
         try
         {
-            await SaveThreadAsync(agent, thread, threadId, cancellationToken);
+            await SaveThreadWithHistoryAsync(agent, thread, threadId, conversationHistory, cancellationToken);
             
             // Update chat history metadata and notify clients
             await UpdateChatHistoryAsync(threadId, cancellationToken);
@@ -251,9 +236,9 @@ public class ChatHub : Hub
     }
 
     /// <summary>
-    /// Load existing thread or create new one
+    /// Load existing thread with conversation history or create new one
     /// </summary>
-    private async Task<AgentThread> LoadOrCreateThreadAsync(
+    private async Task<(AgentThread thread, List<ChatMessage> conversationHistory)> LoadOrCreateThreadWithHistoryAsync(
         AIAgent agent,
         string threadId,
         CancellationToken cancellationToken)
@@ -265,9 +250,12 @@ public class ChatHub : Hub
             if (threadData.HasValue)
             {
                 _logger.LogDebug("Loading existing thread: {ThreadId}", threadId);
-                // For now, create a new thread since AgentThread doesn't expose messages directly
-                // The thread data will be loaded via the persistent storage mechanism
-                return agent.GetNewThread();
+                
+                // Load conversation history from thread data
+                var conversationHistory = LoadConversationHistory(threadData.Value);
+                
+                // Create a new thread since AgentThread doesn't expose messages directly
+                return (agent.GetNewThread(), conversationHistory);
             }
         }
         catch (Exception ex)
@@ -276,32 +264,85 @@ public class ChatHub : Hub
         }
 
         _logger.LogDebug("Creating new thread: {ThreadId}", threadId);
-        return agent.GetNewThread();
+        return (agent.GetNewThread(), new List<ChatMessage>());
     }
 
     /// <summary>
-    /// Save thread to persistent storage
+    /// Load conversation history from thread data
     /// </summary>
-    private async Task SaveThreadAsync(
+    private List<ChatMessage> LoadConversationHistory(JsonElement threadData)
+    {
+        var messages = new List<ChatMessage>();
+        
+        try
+        {
+            if (threadData.TryGetProperty("messages", out var messagesProperty) && 
+                messagesProperty.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var msg in messagesProperty.EnumerateArray())
+                {
+                    if (msg.TryGetProperty("role", out var roleProperty) &&
+                        msg.TryGetProperty("content", out var contentProperty) &&
+                        roleProperty.ValueKind == JsonValueKind.String &&
+                        contentProperty.ValueKind == JsonValueKind.String)
+                    {
+                        var role = roleProperty.GetString();
+                        var content = contentProperty.GetString();
+                        
+                        if (!string.IsNullOrEmpty(role) && !string.IsNullOrEmpty(content))
+                        {
+                            var chatRole = role.ToLowerInvariant() switch
+                            {
+                                "user" => ChatRole.User,
+                                "assistant" => ChatRole.Assistant,
+                                "system" => ChatRole.System,
+                                _ => ChatRole.User
+                            };
+                            
+                            messages.Add(new ChatMessage(chatRole, content));
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error loading conversation history from thread data");
+        }
+        
+        return messages;
+    }
+
+    /// <summary>
+    /// Save thread with conversation history to persistent storage
+    /// </summary>
+    private async Task SaveThreadWithHistoryAsync(
         AIAgent agent,
         AgentThread thread,
         string threadId,
+        List<ChatMessage> conversationHistory,
         CancellationToken cancellationToken)
     {
         try
         {
-            // Create a basic thread data structure
+            // Create thread data structure with conversation history
             var threadData = new
             {
                 threadId = threadId,
-                created = DateTime.UtcNow
+                created = DateTime.UtcNow,
+                provider = agent.Name,
+                messages = conversationHistory.Select(msg => new
+                {
+                    role = msg.Role.ToString().ToLowerInvariant(),
+                    content = msg.Text
+                }).ToArray()
             };
 
             var json = System.Text.Json.JsonSerializer.Serialize(threadData);
             var jsonElement = System.Text.Json.JsonDocument.Parse(json).RootElement;
             
             await _threadStorage.SaveThreadAsync(threadId, jsonElement, cancellationToken);
-            _logger.LogDebug("Thread saved successfully: {ThreadId}", threadId);
+            _logger.LogDebug("Thread saved successfully: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
         }
         catch (Exception ex)
         {

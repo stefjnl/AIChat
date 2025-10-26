@@ -52,6 +52,8 @@
       // Click to select thread
       historyItem.addEventListener("click", (e) => {
         if (!e.target.closest('.delete-btn')) {
+          // Add loading state to the clicked item
+          this.setItemLoadingState(historyItem, true);
           onSelect(item.threadId);
         }
       });
@@ -64,6 +66,49 @@
           onDelete(item.threadId);
         });
       }
+    }
+
+    setItemLoadingState(historyItem, isLoading) {
+      if (!historyItem) return;
+      
+      if (isLoading) {
+        // Add loading visual indicators
+        historyItem.classList.add('opacity-60', 'pointer-events-none');
+        
+        // Add loading spinner if not already present
+        if (!historyItem.querySelector('.loading-spinner')) {
+          const spinnerContainer = document.createElement('div');
+          spinnerContainer.className = 'loading-spinner flex items-center space-x-2';
+          spinnerContainer.innerHTML = `
+            <div class="animate-spin rounded-full h-3 w-3 border border-indigo-600 border-t-transparent"></div>
+            <span class="text-xs text-indigo-600">Loading...</span>
+          `;
+          
+          // Insert after the title div
+          const titleDiv = historyItem.querySelector('.font-medium');
+          if (titleDiv && titleDiv.parentNode) {
+            titleDiv.parentNode.insertBefore(spinnerContainer, titleDiv.nextSibling);
+          }
+        }
+      } else {
+        // Remove loading visual indicators
+        historyItem.classList.remove('opacity-60', 'pointer-events-none');
+        
+        // Remove loading spinner
+        const spinner = historyItem.querySelector('.loading-spinner');
+        if (spinner) {
+          spinner.remove();
+        }
+      }
+    }
+
+    clearAllLoadingStates(container) {
+      if (!container) return;
+      
+      const items = container.querySelectorAll('.chat-item');
+      items.forEach(item => {
+        this.setItemLoadingState(item, false);
+      });
     }
 
     updateHistoryDisplay(container, currentThreadId = null, onSelect = null, onDelete = null) {
