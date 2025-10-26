@@ -7,7 +7,7 @@ public class ProvidersConfiguration
 
 public class ProviderSettings
 {
-    public required string BaseUrl { get; set; }
+    public string BaseUrl { get; set; } = string.Empty;
     public string? ApiKey { get; set; }
-    public required string DefaultModel { get; set; }
+    public string DefaultModel { get; set; } = string.Empty;
 }
