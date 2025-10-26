@@ -44,16 +44,18 @@ public class FileThreadStorage : IThreadStorage
         return Path.Combine(_basePath, $"{threadId}.json");
     }
 
-    public async Task<IEnumerable<string>> ListThreadIdsAsync(CancellationToken ct = default)
+    public Task<IEnumerable<string>> ListThreadIdsAsync(CancellationToken ct = default)
     {
         if (!Directory.Exists(_basePath))
-            return Array.Empty<string>();
+            return Task.FromResult<IEnumerable<string>>(Array.Empty<string>());
 
         var files = Directory.GetFiles(_basePath, "*.json", SearchOption.TopDirectoryOnly);
-        return files
+        var result = files
             .Select(Path.GetFileNameWithoutExtension)
             .Where(id => !string.IsNullOrEmpty(id))
             .Select(id => id!)
             .ToArray();
+        
+        return Task.FromResult<IEnumerable<string>>(result);
     }
 }

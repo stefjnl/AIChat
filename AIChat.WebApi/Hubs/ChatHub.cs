@@ -75,7 +75,6 @@ public class ChatHub : Hub
 
         AgentThread? thread = null;
         AIAgent? agent = null;
-        Exception? streamException = null;
         UsageDetails? usage = null;
 
         // Resolve agent
@@ -124,77 +123,33 @@ public class ChatHub : Hub
         };
 
         // Stream response from agent using full conversation history
-        var chunks = new List<ChatChunk>();
         string fullResponse = "";
         
-        try
+        await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
         {
-            await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
+            // Check for usage information
+            var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
+            if (usageContent != null)
             {
-                // Check for usage information
-                var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
-                if (usageContent != null)
-                {
-                    usage = usageContent.Details;
-                    _logger.LogDebug(
-                        "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
-                        usage.InputTokenCount,
-                        usage.OutputTokenCount,
-                        usage.TotalTokenCount);
-                }
-
-                // Collect text chunks
-                if (!string.IsNullOrEmpty(update.Text))
-                {
-                    chunks.Add(new ChatChunk
-                    {
-                        Text = update.Text,
-                        IsFinal = false,
-                        ThreadId = threadId
-                    });
-                    fullResponse += update.Text;
-                }
+                usage = usageContent.Details;
+                _logger.LogDebug(
+                    "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
+                    usage.InputTokenCount,
+                    usage.OutputTokenCount,
+                    usage.TotalTokenCount);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation(
-                "StreamChat cancelled by client - Provider: {Provider}, ThreadId: {ThreadId}",
-                provider, threadId);
-            streamException = new OperationCanceledException("Request cancelled");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "Error in StreamChat - Provider: {Provider}, ThreadId: {ThreadId}",
-                provider, threadId);
-            streamException = ex;
-        }
 
-        // Handle exceptions
-        if (streamException != null)
-        {
-            if (streamException is OperationCanceledException)
+            // Yield text chunks immediately for true streaming
+            if (!string.IsNullOrEmpty(update.Text))
             {
+                fullResponse += update.Text;
                 yield return new ChatChunk
                 {
-                    Text = null,
-                    IsFinal = true,
-                    ThreadId = threadId,
-                    Error = "Request cancelled"
+                    Text = update.Text,
+                    IsFinal = false,
+                    ThreadId = threadId
                 };
             }
-            else
-            {
-                yield return new ChatChunk
-                {
-                    Text = null,
-                    IsFinal = true,
-                    ThreadId = threadId,
-                    Error = $"Error: {streamException.Message}"
-                };
-            }
-            yield break;
         }
 
         // Add the assistant's response to conversation history
@@ -204,12 +159,6 @@ public class ChatHub : Hub
             var assistantTimestamp = DateTime.UtcNow;
             conversationHistory.Add(assistantMessage);
             newMessageTimestamps[conversationHistory.Count - 1] = assistantTimestamp;
-        }
-
-        // Yield all collected chunks
-        foreach (var chunk in chunks)
-        {
-            yield return chunk;
         }
 
         // Save thread with updated conversation history
