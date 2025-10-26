@@ -131,14 +131,9 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "https://localhost:5173",
-                "http://localhost:5187",
-                "https://localhost:7143")
+        policy.AllowAnyOrigin()
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); // Required for SignalR
+              .AllowAnyMethod();
     });
 });
 
@@ -164,5 +159,8 @@ app.MapControllers();
 
 // SignalR Hub
 app.MapHub<ChatHub>("/chathub");
+
+// Map root endpoint to serve the chat interface
+app.MapGet("/", () => Results.File("wwwroot/index.html", "text/html"));
 
 app.Run();

@@ -80,4 +80,46 @@ public class ThreadsController : ControllerBase
             return StatusCode(500, "Failed to delete thread");
         }
     }
+
+    /// <summary>
+    /// List all thread IDs
+    /// </summary>
+    [HttpGet("list")]
+    public async Task<IActionResult> ListThreads()
+    {
+        try
+        {
+            var threadIds = await _threadStorage.ListThreadIdsAsync();
+            return Ok(new { threadIds = threadIds.ToArray() });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error listing threads");
+            return StatusCode(500, "Failed to list threads");
+        }
+    }
+
+    /// <summary>
+    /// Get thread data
+    /// </summary>
+    [HttpGet("{threadId}")]
+    public async Task<IActionResult> GetThread(string threadId)
+    {
+        try
+        {
+            var exists = await _threadStorage.ThreadExistsAsync(threadId);
+            if (!exists)
+            {
+                return NotFound(new { message = "Thread not found" });
+            }
+
+            var data = await _threadStorage.LoadThreadAsync(threadId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting thread: {ThreadId}", threadId);
+            return StatusCode(500, "Failed to get thread");
+        }
+    }
 }

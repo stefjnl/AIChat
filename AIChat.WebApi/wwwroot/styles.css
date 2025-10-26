@@ -1,0 +1,28 @@
+/* Custom scrollbar for chat history */
+.chat-history::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-history::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1; /* slate-300 */
+  border-radius: 3px;
+}
+
+.chat-history::-webkit-scrollbar-track {
+  background-color: #f8fafc; /* slate-50 */
+}
+
+/* Smooth textarea auto-expand */
+#messageInput {
+  transition: height 0.1s ease;
+}
+
+/* Optional: custom bounce animation (Tailwind's animate-bounce is used in index.html) */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.dot-bounce {
+  animation: bounce 1s infinite;
+}

@@ -14,4 +14,8 @@
     <PackageReference Include="Aspire.Hosting.AppHost" Version="9.5.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\AIChat.WebApi\AIChat.WebApi.csproj" />
+  </ItemGroup>
+
 </Project>
