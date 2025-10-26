@@ -76,8 +76,7 @@ public class ProviderIntegrationTests : IDisposable
         }
 
         // Create factory
-        var options = Options.Create(providersConfig);
-        _factory = new ProviderClientFactory(options);
+        _factory = new ProviderClientFactory(providersConfig);
     }
 
     [Fact]

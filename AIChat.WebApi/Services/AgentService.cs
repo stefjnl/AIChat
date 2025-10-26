@@ -5,18 +5,12 @@ namespace AIChat.WebApi.Services;
 /// <summary>
 /// Helper service for resolving AI agents by provider name
 /// </summary>
-public class AgentService
+public class AgentService(
+    IServiceProvider serviceProvider,
+    ILogger<AgentService> logger)
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<AgentService> _logger;
-
-    public AgentService(
-        IServiceProvider serviceProvider,
-        ILogger<AgentService> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _logger = logger;
-    }
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
+    private readonly ILogger<AgentService> _logger = logger;
 
     /// <summary>
     /// Get an agent by provider name

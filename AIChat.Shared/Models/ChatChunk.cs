@@ -5,6 +5,8 @@ public class ChatChunk
     public string? Text { get; set; }
     public TokenUsage? Usage { get; set; }
     public bool IsFinal { get; set; }
+    public string? Error { get; set; }
+    public string? ThreadId { get; set; }
 }
 
 public class TokenUsage

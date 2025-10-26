@@ -1,19 +1,13 @@
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
-using OpenAI;
 using AIChat.Infrastructure.Configuration;
+using Microsoft.Extensions.AI;
+using OpenAI;
 using System.ClientModel;
 
 namespace AIChat.Agents.Providers;
 
-public class ProviderClientFactory
+public class ProviderClientFactory(ProvidersConfiguration config)
 {
-    private readonly ProvidersConfiguration _config;
-
-    public ProviderClientFactory(IOptions<ProvidersConfiguration> config)
-    {
-        _config = config.Value;
-    }
+    private readonly ProvidersConfiguration _config = config;
 
     public IChatClient CreateChatClient(string providerName)
     {

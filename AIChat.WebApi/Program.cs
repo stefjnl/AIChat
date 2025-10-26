@@ -4,6 +4,7 @@ using AIChat.Agents.Providers;
 using AIChat.Infrastructure.Configuration;
 using AIChat.Infrastructure.Storage;
 using AIChat.WebApi.Services;
+using AIChat.WebApi.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -130,7 +131,11 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "https://localhost:5173") // Adjust for your frontend
+        policy.WithOrigins(
+                "http://localhost:5173",
+                "https://localhost:5173",
+                "http://localhost:5187",
+                "https://localhost:7143")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Required for SignalR
@@ -156,7 +161,8 @@ app.UseRouting();
 
 // Map endpoints
 app.MapControllers();
-// SignalR hub will be added in Phase 6
-// app.MapHub<ChatHub>("/chathub");
+
+// SignalR Hub
+app.MapHub<ChatHub>("/chathub");
 
 app.Run();

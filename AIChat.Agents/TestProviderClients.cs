@@ -77,8 +77,7 @@ public class ProviderTestHarness
         }
 
         // Create factory
-        var options = Options.Create(providersConfig);
-        var factory = new ProviderClientFactory(options);
+        var factory = new ProviderClientFactory(providersConfig);
         
         // Run tests
         var harness = new ProviderTestHarness(factory, config);
