@@ -149,6 +149,10 @@ public class ResilienceSettings
 
     /// <summary>
     /// Gets or sets maximum backoff multiplier for exponential retry.
+    /// <para>
+    /// <b>Reserved for future use:</b> This property is not currently used in the codebase,
+    /// but is defined for planned enhancements to exponential backoff logic.
+    /// </para>
     /// </summary>
     public double MaxBackoffMultiplier { get; set; } = 8.0;
 }
