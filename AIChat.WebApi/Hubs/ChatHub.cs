@@ -4,6 +4,9 @@ using Microsoft.Extensions.AI;
 using AIChat.Infrastructure.Storage;
 using AIChat.Infrastructure.Models;
 using AIChat.Shared.Models;
+using AIChat.Safety.Services;
+using AIChat.Safety.Contracts;
+using AIChat.Safety.DependencyInjection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Linq;
@@ -19,17 +22,28 @@ public class ChatHub : Hub
     private readonly IThreadStorage _threadStorage;
     private readonly IChatHistoryStorage _chatHistoryStorage;
     private readonly ILogger<ChatHub> _logger;
+    private readonly ISafetyEvaluationService _safetyService;
 
+    /// <summary>
+    /// Initializes a new instance of the ChatHub class.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider for resolving dependencies.</param>
+    /// <param name="threadStorage">The thread storage service.</param>
+    /// <param name="chatHistoryStorage">The chat history storage service.</param>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="safetyService">The safety evaluation service.</param>
     public ChatHub(
         IServiceProvider serviceProvider,
         IThreadStorage threadStorage,
         IChatHistoryStorage chatHistoryStorage,
-        ILogger<ChatHub> logger)
+        ILogger<ChatHub> logger,
+        ISafetyEvaluationService safetyService)
     {
-        _serviceProvider = serviceProvider;
-        _threadStorage = threadStorage;
-        _chatHistoryStorage = chatHistoryStorage;
-        _logger = logger;
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _threadStorage = threadStorage ?? throw new ArgumentNullException(nameof(threadStorage));
+        _chatHistoryStorage = chatHistoryStorage ?? throw new ArgumentNullException(nameof(chatHistoryStorage));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _safetyService = safetyService ?? throw new ArgumentNullException(nameof(safetyService));
     }
 
     /// <summary>
@@ -111,6 +125,51 @@ public class ChatHub : Hub
         thread = loadedThread;
         _logger.LogDebug("Using thread: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
 
+        // 1. Evaluate user's message for safety violations
+        SafetyEvaluationResult userMessageEvaluation;
+        bool userEvaluationFailed = false;
+        
+        try
+        {
+            userMessageEvaluation = await _safetyService.EvaluateUserInputAsync(message, cancellationToken);
+            _logger.LogDebug("User message safety evaluation completed. IsSafe: {IsSafe}, RiskScore: {RiskScore}",
+                userMessageEvaluation.IsSafe, userMessageEvaluation.RiskScore);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to evaluate user message for safety");
+            userEvaluationFailed = true;
+            userMessageEvaluation = new SafetyEvaluationResult
+            {
+                IsSafe = false,
+                RiskScore = 100,
+                Recommendations = { "Safety evaluation failed" }
+            };
+        }
+
+        if (userEvaluationFailed || !userMessageEvaluation.IsSafe)
+        {
+            var errorMessage = userEvaluationFailed
+                ? "Unable to process your message due to a safety service error. Please try again later."
+                : "Your message has been blocked due to harmful content.";
+            
+            var errorType = userEvaluationFailed ? "Safety service unavailable" : "Harmful content detected";
+            
+            if (!userEvaluationFailed)
+            {
+                _logger.LogWarning("User message blocked due to safety violations. Categories: {Categories}, RiskScore: {RiskScore}",
+                    userMessageEvaluation.DetectedCategories.Select(c => c.Category), userMessageEvaluation.RiskScore);
+            }
+            
+            yield return new ChatChunk
+            {
+                Text = errorMessage,
+                IsFinal = true,
+                Error = errorType
+            };
+            yield break;
+        }
+
         // Add the new user message to conversation history
         var userMessage = new ChatMessage(ChatRole.User, message);
         var userTimestamp = DateTime.UtcNow;
@@ -122,33 +181,123 @@ public class ChatHub : Hub
             { conversationHistory.Count - 1, userTimestamp }
         };
 
-        // Stream response from agent using full conversation history
-        string fullResponse = "";
+        // 2. Evaluate assistant's response stream using streaming safety evaluator
+        IStreamingSafetyEvaluator? streamingEvaluator = null;
+        bool evaluatorCreationFailed = false;
         
-        await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
+        try
         {
-            // Check for usage information
-            var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
-            if (usageContent != null)
+            streamingEvaluator = _safetyService.CreateStreamingEvaluator();
+            _logger.LogDebug("Created streaming safety evaluator for AI response");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create streaming safety evaluator");
+            evaluatorCreationFailed = true;
+        }
+
+        if (evaluatorCreationFailed)
+        {
+            yield return new ChatChunk
             {
-                usage = usageContent.Details;
-                _logger.LogDebug(
-                    "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
-                    usage.InputTokenCount,
-                    usage.OutputTokenCount,
-                    usage.TotalTokenCount);
+                Text = "Unable to start safety evaluation for the AI response. Please try again later.",
+                IsFinal = true,
+                Error = "Safety service unavailable"
+            };
+            yield break;
+        }
+
+        string fullResponse = "";
+        var processedChunks = 0;
+        
+        try
+        {
+            await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
+            {
+                // Check for usage information
+                var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
+                if (usageContent != null)
+                {
+                    usage = usageContent.Details;
+                    _logger.LogDebug(
+                        "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
+                        usage.InputTokenCount,
+                        usage.OutputTokenCount,
+                        usage.TotalTokenCount);
+                }
+
+                // Evaluate chunk before sending to user
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    SafetyEvaluationResult chunkEvaluation;
+                    bool evaluationFailed = false;
+                    
+                    try
+                    {
+                        chunkEvaluation = await streamingEvaluator!.EvaluateChunkAsync(update.Text, cancellationToken);
+                        processedChunks++;
+                        
+                        _logger.LogDebug("Evaluated chunk {ChunkCount}. IsSafe: {IsSafe}, RiskScore: {RiskScore}",
+                            processedChunks, chunkEvaluation.IsSafe, chunkEvaluation.RiskScore);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to evaluate response chunk {ChunkCount}", processedChunks);
+                        evaluationFailed = true;
+                        chunkEvaluation = new SafetyEvaluationResult
+                        {
+                            IsSafe = false,
+                            RiskScore = 100,
+                            Recommendations = { "Safety evaluation failed" }
+                        };
+                    }
+
+                    if (evaluationFailed || !chunkEvaluation.IsSafe)
+                    {
+                        var errorMessage = evaluationFailed
+                            ? "A safety evaluation error occurred during the response. The response has been stopped for your safety."
+                            : "The assistant's response has been blocked due to harmful content.";
+                        
+                        var errorType = evaluationFailed ? "Safety evaluation error" : "Harmful content detected in assistant response";
+                        
+                        if (!evaluationFailed)
+                        {
+                            _logger.LogWarning("Assistant's response blocked after {ProcessedChunks} chunks due to {Categories} with risk score {RiskScore}.",
+                                processedChunks, chunkEvaluation.DetectedCategories.Select(c => c.Category), chunkEvaluation.RiskScore);
+                        }
+                        
+                        yield return new ChatChunk
+                        {
+                            Text = errorMessage,
+                            IsFinal = true,
+                            Error = errorType
+                        };
+                        yield break; // Stop streaming
+                    }
+
+                    fullResponse += update.Text;
+                    yield return new ChatChunk
+                    {
+                        Text = update.Text,
+                        IsFinal = false,
+                        ThreadId = threadId
+                    };
+                }
             }
 
-            // Yield text chunks immediately for true streaming
-            if (!string.IsNullOrEmpty(update.Text))
+            _logger.LogDebug("Completed streaming evaluation of {ProcessedChunks} chunks. Final response length: {ResponseLength}",
+                processedChunks, fullResponse.Length);
+        }
+        finally
+        {
+            // Ensure the streaming evaluator is properly disposed
+            try
             {
-                fullResponse += update.Text;
-                yield return new ChatChunk
-                {
-                    Text = update.Text,
-                    IsFinal = false,
-                    ThreadId = threadId
-                };
+                streamingEvaluator?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error disposing streaming safety evaluator");
             }
         }
 

@@ -31,6 +31,7 @@
     <ProjectReference Include="..\AIChat.Agents\AIChat.Agents.csproj" />
     <ProjectReference Include="..\AIChat.Infrastructure\AIChat.Infrastructure.csproj" />
     <ProjectReference Include="..\AIChat.Shared\AIChat.Shared.csproj" />
+    <ProjectReference Include="..\AIChat.Safety\AIChat.Safety.csproj" />
   </ItemGroup>
 
 

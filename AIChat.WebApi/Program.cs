@@ -5,6 +5,11 @@ using AIChat.Infrastructure.Configuration;
 using AIChat.Infrastructure.Storage;
 using AIChat.WebApi.Services;
 using AIChat.WebApi.Hubs;
+using AIChat.Safety.Services;
+using AIChat.Safety.Providers;
+using AIChat.Safety.Contracts;
+using AIChat.Safety.Options;
+using AIChat.Safety.DependencyInjection;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
@@ -80,6 +85,13 @@ builder.Configuration.GetSection("Storage").Bind(storageConfig);
 builder.Services.AddSingleton(storageConfig);
 
 // ============================================================
+// SAFETY CONFIGURATION
+// ============================================================
+
+// Add AIChat safety services
+builder.Services.AddAISafetyServices(builder.Configuration);
+
+// ============================================================
 // INFRASTRUCTURE SERVICES
 // ============================================================
 
@@ -94,6 +106,11 @@ builder.Services.AddSingleton<ProviderClientFactory>();
 
 // Agent helper service
 builder.Services.AddSingleton<AgentService>();
+
+// ============================================================
+// SAFETY SERVICES
+// ============================================================
+// Safety services are already registered via AddAISafetyServices()
 
 // ============================================================
 // AGENT REGISTRATION

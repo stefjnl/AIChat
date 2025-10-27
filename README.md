@@ -11,6 +11,7 @@ A modern, scalable .NET 9 web application that provides a unified interface for 
 - **Modern UI**: Responsive, beautiful interface with Tailwind CSS
 - **Comprehensive Testing**: Unit and integration tests for reliability
 - **Clean Architecture**: Well-structured, maintainable codebase
+- **Responsible AI**: Built-in safety evaluation and content moderation
 
 ## 🏗️ Architecture
 
@@ -21,6 +22,7 @@ AIChat/
 ├── AIChat.Shared/           # Shared models and contracts
 ├── AIChat.Infrastructure/   # Configuration and storage implementations
 ├── AIChat.Agents/          # AI provider integrations and client factory
+├── AIChat.Safety/          # Responsible AI safety evaluation system
 ├── AIChat.WebApi/          # Web API and SignalR hub
 ├── AIChat.AppHost/         # Application hosting (Aspire)
 └── AIChat.Agents.Tests/    # Comprehensive test suite
@@ -230,3 +232,56 @@ docker run -p 5001:80 aichat
 - Update documentation as needed
 - Use meaningful commit messages
 - Ensure all tests pass before submitting
+
+## 🛡️ Responsible AI
+
+AIChat includes a comprehensive Responsible AI safety system that helps ensure safe and appropriate interactions. The system provides:
+
+### Safety Evaluation Features
+- **Real-time Content Moderation**: Uses OpenAI's Moderation API to detect harmful content
+- **Streaming Safety Analysis**: Evaluates AI responses in real-time as they're generated
+- **Configurable Policies**: Separate policies for user input and AI output with customizable thresholds
+- **Harm Category Detection**: Identifies hate speech, self-harm, sexual content, and violence
+- **Fallback Mechanisms**: Graceful degradation when safety services are unavailable
+
+### Key Components
+- **[`SafetyEvaluationService`](AIChat.Safety/Services/SafetyEvaluationService.cs)**: Main service coordinating safety evaluations
+- **[`OpenAIModerationEvaluator`](AIChat.Safety/Providers/OpenAIModerationEvaluator.cs)**: OpenAI Moderation API integration
+- **[`Streaming Safety Evaluator`](AIChat.Safety/Providers/OpenAIStreamingSafetyEvaluator.cs)**: Real-time content analysis
+- **Comprehensive Configuration**: Detailed settings for thresholds, policies, and resilience
+
+### Safety Configuration
+The safety system is configured through the `Safety` section in [`appsettings.json`](AIChat.WebApi/appsettings.json):
+
+```json
+{
+  "Safety": {
+    "Enabled": true,
+    "FallbackBehavior": "FailOpen",
+    "InputPolicy": {
+      "Thresholds": {
+        "Hate": 4,
+        "SelfHarm": 6,
+        "Sexual": 4,
+        "Violence": 2
+      }
+    },
+    "OutputPolicy": {
+      "Thresholds": {
+        "Hate": 2,
+        "SelfHarm": 4,
+        "Sexual": 2,
+        "Violence": 2
+      }
+    }
+  }
+}
+```
+
+### Integration Points
+- **Chat Pipeline**: Automatic evaluation of user input and AI responses
+- **SignalR Streaming**: Real-time safety checks during streaming responses
+- **Audit Logging**: Comprehensive logging of safety violations and system events
+- **Health Monitoring**: Built-in health checks for safety service availability
+
+For detailed implementation information, see [RESPONSIBLE_AI.md](RESPONSIBLE_AI.md) and [RAI-Architecture.md](RAI-Architecture.md).
