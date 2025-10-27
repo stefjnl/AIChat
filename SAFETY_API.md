@@ -809,4 +809,4 @@ public class RateLimitedSafetyEvaluator : ISafetyEvaluator
 For additional information, see:
 - [RESPONSIBLE_AI.md](RESPONSIBLE_AI.md) - Implementation guide
 - [RAI-Architecture.md](RAI-Architecture.md) - Technical architecture
-- [SAINTY_CONFIGURATION_DOCUMENTATION.md](SAINTY_CONFIGURATION_DOCUMENTATION.md) - Configuration options
+- [SAFETY_CONFIGURATION_DOCUMENTATION.md](SAFETY_CONFIGURATION_DOCUMENTATION.md) - Configuration options
