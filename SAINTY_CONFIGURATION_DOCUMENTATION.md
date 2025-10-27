@@ -51,7 +51,7 @@ Applied to user prompts and incoming requests.
 
 #### InputPolicy.Thresholds
 **Type:** object  
-**Description:** Harm category thresholds (0-8 scale, where 8 is most severe):
+**Description:** Harm category thresholds (0-7 scale, where 7 is most severe):
 - **Hate:** 4 - Hate speech threshold
 - **SelfHarm:** 6 - Self-harm content threshold
 - **Sexual:** 4 - Sexually explicit content threshold
