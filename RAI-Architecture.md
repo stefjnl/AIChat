@@ -20,7 +20,6 @@ AIChat.Safety/
 ├── Contracts/
 │   ├── ISafetyEvaluator.cs                 # Main evaluation interface
 │   ├── IStreamingSafetyEvaluator.cs        # Real-time streaming interface
-│   ├── IStreamingSafetyEvaluator.cs        # Streaming interface
 │   ├── ISafetyFilter.cs                    # Content filtering interface
 │   ├── SafetyEvaluationResult.cs           # Evaluation result model
 │   └── HarmCategory.cs                     # Harm category enumeration
