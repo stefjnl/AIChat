@@ -679,4 +679,4 @@ curl https://your-api.com/metrics
 For additional information, see:
 - [RAI-Architecture.md](RAI-Architecture.md) - Technical architecture details
 - [SAFETY_API.md](SAFETY_API.md) - API documentation
-- [Configuration Guide](SAINTY_CONFIGURATION_DOCUMENTATION.md) - Detailed configuration options
+- [Configuration Guide](SAFETY_CONFIGURATION_DOCUMENTATION.md) - Detailed configuration options
