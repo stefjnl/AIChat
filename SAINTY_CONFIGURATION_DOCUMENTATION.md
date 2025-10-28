@@ -15,26 +15,74 @@ The safety configuration is organized into several main sections:
 Contains OpenAI Moderation API configuration settings.
 
 #### OpenAI.ApiKey
-**Type:** string  
-**Default:** "" (empty)  
-**Description:** API key for OpenAI moderation service. Should be configured in environment variables or Azure Key Vault for security.
+**Type:** string
+**Default:** "" (empty)
+**Description:** API key for OpenAI moderation service. **Should be stored in user secrets for security.**
 
 #### OpenAI.OrganizationId
-**Type:** string  
-**Default:** "" (empty)  
+**Type:** string
+**Default:** "" (empty)
 **Description:** OpenAI organization ID (optional, for organizational access control and billing).
 
 #### OpenAI.Model
-**Type:** string  
-**Default:** "text-moderation-latest"  
+**Type:** string
+**Default:** "omni-moderation-latest"
 **Description:** OpenAI moderation model to use. Options include:
-- "text-moderation-latest" - Most recent model
+- "omni-moderation-latest" - Most recent model with comprehensive categories
+- "text-moderation-latest" - Legacy text moderation model
 - "text-moderation-stable" - Stable model with consistent behavior
 
 #### OpenAI.Endpoint
-**Type:** string  
-**Default:** "https://api.openai.com/v1/moderations"  
+**Type:** string
+**Default:** "https://api.openai.com/v1/moderations"
 **Description:** OpenAI API endpoint for moderation. Can be overridden for custom endpoints or proxy configurations.
+
+## API Key Configuration
+
+### User Secrets (Recommended for Development)
+
+The OpenAI API key should be stored securely using .NET User Secrets. This prevents accidental exposure of sensitive API keys in source control.
+
+#### Setting up User Secrets
+
+1. **Initialize User Secrets** (if not already done):
+   ```bash
+   dotnet user-secrets init
+   ```
+
+2. **Set the OpenAI API Key**:
+   ```bash
+   dotnet user-secrets set "OpenAI:ApiKey" "your-actual-openai-api-key-here"
+   ```
+
+3. **Verify the secret**:
+   ```bash
+   dotnet user-secrets list
+   ```
+
+#### API Key Resolution Order
+
+The safety system will look for the OpenAI API key in the following order of precedence:
+
+1. **`Safety:ApiKey`** - Direct safety configuration (backward compatibility)
+2. **`Safety:OpenAI:ApiKey`** - Nested OpenAI configuration
+3. **`OpenAI:ApiKey`** - Standard OpenAI configuration path (recommended)
+4. **`OPENAI_API_KEY`** - Environment variable
+5. **Direct ApiKey property** - Fallback for legacy configurations
+
+#### Production Deployment
+
+For production environments, use one of the following secure methods:
+
+1. **Azure Key Vault** - Recommended for Azure deployments
+2. **Environment Variables** - For containerized deployments
+3. **AWS Secrets Manager** - For AWS deployments
+4. **Other secret management systems** - Based on your infrastructure
+
+Example environment variable:
+```bash
+export OPENAI_API_KEY="your-production-api-key"
+```
 
 ### Safety.FallbackBehavior
 **Type:** string  
@@ -205,15 +253,25 @@ Contains advanced safety evaluation features.
 
 ## Security Considerations
 
-1. **API Key Management:** Store OpenAI API keys in secure locations (Azure Key Vault, environment variables, or secret management systems).
+1. **API Key Management:**
+   - **Never** store API keys in appsettings.json files
+   - **Always** use user secrets for development
+   - **Always** use secure secret management for production
+   - Rotate API keys regularly and monitor usage
 
-2. **Audit Logging:** Be cautious with `LogFullContent: true` as it may expose sensitive user data in logs.
+2. **User Secrets Best Practices:**
+   - User secrets are stored in your user profile directory, not in source control
+   - They're automatically loaded in development environment
+   - They're not available in production (use appropriate secret management)
+   - Never commit secrets.json files to version control
 
-3. **Threshold Tuning:** Regularly review and adjust thresholds based on your specific use case and compliance requirements.
+3. **Audit Logging:** Be cautious with `LogFullContent: true` as it may expose sensitive user data in logs.
 
-4. **Circuit Breaker:** Monitor circuit breaker events to identify service health issues.
+4. **Threshold Tuning:** Regularly review and adjust thresholds based on your specific use case and compliance requirements.
 
-5. **Performance:** Consider the impact of safety evaluations on response times, especially with streaming enabled.
+5. **Circuit Breaker:** Monitor circuit breaker events to identify service health issues.
+
+6. **Performance:** Consider the impact of safety evaluations on response times, especially with streaming enabled.
 
 ## Configuration Examples
 
