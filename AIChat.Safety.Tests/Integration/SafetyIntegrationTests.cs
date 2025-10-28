@@ -83,7 +83,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Metadata.ProcessingTimeMs.Should().BeGreaterThan(0);
 
         // Verify HTTP request was made
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -96,7 +96,7 @@ public class SafetyIntegrationTests : IDisposable
         var harmfulInput = "I hate people from that country and they should be punished.";
         var expectedResponse = CreateHateModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -117,7 +117,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Metadata!.Provider.Should().Be("OpenAI Moderation");
 
         // Verify HTTP request was made
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -130,7 +130,7 @@ public class SafetyIntegrationTests : IDisposable
         var sexualOutput = "Explicit sexual content with detailed descriptions of adult activities.";
         var expectedResponse = CreateSexualModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -148,7 +148,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Recommendations.Should().Contain(r => r.Contains("sexually explicit"));
 
         // Verify HTTP request was made
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -197,7 +197,7 @@ public class SafetyIntegrationTests : IDisposable
         results[4].IsSafe.Should().BeTrue();
 
         // Verify HTTP requests were made
-        _mockHttp.GetMatchCount().Should().Be(5);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(5);
     }
 
     /// <summary>
@@ -245,7 +245,7 @@ public class SafetyIntegrationTests : IDisposable
         streamingEvaluator.HasViolations().Should().BeTrue();
 
         // Verify HTTP requests were made
-        _mockHttp.GetMatchCount().Should().BeGreaterOrEqualTo(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().BeGreaterOrEqualTo(1);
 
         // Cleanup
         streamingEvaluator.Dispose();
@@ -276,7 +276,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Metadata!.AdditionalData.Should().ContainKey("FallbackReason");
 
         // Verify HTTP request was attempted
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -301,7 +301,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Metadata!.AdditionalData.Should().ContainKey("FallbackReason");
 
         // Verify HTTP request was attempted
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -374,7 +374,7 @@ public class SafetyIntegrationTests : IDisposable
         highSeverityResult.DetectedCategories.Should().Contain(c => c.Category == HarmCategory.Hate);
 
         // Verify HTTP requests were made
-        _mockHttp.GetMatchCount().Should().Be(2);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(2);
     }
 
     /// <summary>
@@ -421,7 +421,7 @@ public class SafetyIntegrationTests : IDisposable
         result.Description.Should().Contain("OpenAI Moderation");
 
         // Verify HTTP request was made
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     private static object CreateSafeModerationResponse()
@@ -429,21 +429,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-safe-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = false,
-                    categories = new { },
-                    hate = false,
-                    hate_score = 0.01,
-                    self_harm = false,
-                    self_harm_score = 0.02,
-                    sexual = false,
-                    sexual_score = 0.01,
-                    violence = false,
-                    violence_score = 0.01
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = false,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.01,
+                        harassment_threatening = 0.01,
+                        hate = 0.01,
+                        hate_threatening = 0.01,
+                        self_harm = 0.02,
+                        self_harm_instructions = 0.01,
+                        self_harm_intent = 0.01,
+                        sexual = 0.01,
+                        sexual_minors = 0.01,
+                        violence = 0.01,
+                        violence_graphic = 0.01
+                    }
                 }
             }
         };
@@ -454,21 +473,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.8,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = false,
-                    violence_score = 0.2
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = true,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.1,
+                        harassment_threatening = 0.05,
+                        hate = 0.8,
+                        hate_threatening = 0.1,
+                        self_harm = 0.1,
+                        self_harm_instructions = 0.05,
+                        self_harm_intent = 0.05,
+                        sexual = 0.05,
+                        sexual_minors = 0.01,
+                        violence = 0.2,
+                        violence_graphic = 0.1
+                    }
                 }
             }
         };
@@ -479,21 +517,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-sexual-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { sexual = true },
-                    hate = false,
-                    hate_score = 0.1,
-                    self_harm = false,
-                    self_harm_score = 0.05,
-                    sexual = true,
-                    sexual_score = 0.85,
-                    violence = false,
-                    violence_score = 0.15
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = false,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = true,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.1,
+                        harassment_threatening = 0.05,
+                        hate = 0.1,
+                        hate_threatening = 0.05,
+                        self_harm = 0.05,
+                        self_harm_instructions = 0.01,
+                        self_harm_intent = 0.02,
+                        sexual = 0.85,
+                        sexual_minors = 0.01,
+                        violence = 0.15,
+                        violence_graphic = 0.05
+                    }
                 }
             }
         };
@@ -504,21 +561,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-selfharm-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { self_harm = true },
-                    hate = false,
-                    hate_score = 0.1,
-                    self_harm = true,
-                    self_harm_score = 0.9,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = false,
-                    violence_score = 0.1
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = false,
+                        hate_threatening = false,
+                        self_harm = true,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.1,
+                        harassment_threatening = 0.05,
+                        hate = 0.1,
+                        hate_threatening = 0.05,
+                        self_harm = 0.9,
+                        self_harm_instructions = 0.1,
+                        self_harm_intent = 0.2,
+                        sexual = 0.05,
+                        sexual_minors = 0.01,
+                        violence = 0.1,
+                        violence_graphic = 0.05
+                    }
                 }
             }
         };
@@ -529,21 +605,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-multiple-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true, violence = true },
-                    hate = true,
-                    hate_score = 0.7,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = true,
-                    violence_score = 0.8
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = true,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = true,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.1,
+                        harassment_threatening = 0.05,
+                        hate = 0.7,
+                        hate_threatening = 0.1,
+                        self_harm = 0.1,
+                        self_harm_instructions = 0.05,
+                        self_harm_intent = 0.05,
+                        sexual = 0.05,
+                        sexual_minors = 0.01,
+                        violence = 0.8,
+                        violence_graphic = 0.2
+                    }
                 }
             }
         };
@@ -554,21 +649,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-low-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.3, // Low severity
-                    self_harm = false,
-                    self_harm_score = 0.05,
-                    sexual = false,
-                    sexual_score = 0.02,
-                    violence = false,
-                    violence_score = 0.1
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = true,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.05,
+                        harassment_threatening = 0.02,
+                        hate = 0.3, // Low severity
+                        hate_threatening = 0.05,
+                        self_harm = 0.05,
+                        self_harm_instructions = 0.01,
+                        self_harm_intent = 0.02,
+                        sexual = 0.02,
+                        sexual_minors = 0.01,
+                        violence = 0.1,
+                        violence_graphic = 0.05
+                    }
                 }
             }
         };
@@ -579,21 +693,40 @@ public class SafetyIntegrationTests : IDisposable
         return new
         {
             id = "modr-integration-high-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.9, // High severity
-                    self_harm = false,
-                    self_harm_score = 0.05,
-                    sexual = false,
-                    sexual_score = 0.02,
-                    violence = false,
-                    violence_score = 0.1
+                    categories = new
+                    {
+                        harassment = false,
+                        harassment_threatening = false,
+                        hate = true,
+                        hate_threatening = false,
+                        self_harm = false,
+                        self_harm_instructions = false,
+                        self_harm_intent = false,
+                        sexual = false,
+                        sexual_minors = false,
+                        violence = false,
+                        violence_graphic = false
+                    },
+                    category_scores = new
+                    {
+                        harassment = 0.05,
+                        harassment_threatening = 0.02,
+                        hate = 0.9, // High severity
+                        hate_threatening = 0.3,
+                        self_harm = 0.05,
+                        self_harm_instructions = 0.01,
+                        self_harm_intent = 0.02,
+                        sexual = 0.02,
+                        sexual_minors = 0.01,
+                        violence = 0.1,
+                        violence_graphic = 0.05
+                    }
                 }
             }
         };

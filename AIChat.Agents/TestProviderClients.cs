@@ -77,7 +77,7 @@ public class ProviderTestHarness
         }
 
         // Create factory
-        var factory = new ProviderClientFactory(providersConfig);
+        var factory = new ProviderClientFactory(providersConfig, null!);
         
         // Run tests
         var harness = new ProviderTestHarness(factory, config);

@@ -1,17 +1,18 @@
 using AIChat.Safety.Contracts;
 using AIChat.Safety.Options;
-using System.Diagnostics;
-using System.Text.Json;
+using AIChat.Safety.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 
 namespace AIChat.Safety.Providers;
 
 /// <summary>
 /// OpenAI Moderation API implementation of the ISafetyEvaluator interface.
-/// Provides comprehensive text safety evaluation using OpenAI's Moderation API.
+/// Provides comprehensive content safety evaluation using OpenAI's Moderation API.
 /// </summary>
 public class OpenAIModerationEvaluator : ISafetyEvaluator
 {
@@ -20,6 +21,19 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     private readonly ILogger<OpenAIModerationEvaluator> _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly string _providerName = "OpenAI Moderation";
+
+    // OpenTelemetry ActivitySource for distributed tracing
+    private static readonly ActivitySource ActivitySource = new("AIChat.Safety", "1.0.0");
+
+    // Severity threshold constants
+    private const double SeverityThreshold0 = 0.1;
+    private const double SeverityThreshold1 = 0.2;
+    private const double SeverityThreshold2 = 0.3;
+    private const double SeverityThreshold3 = 0.4;
+    private const double SeverityThreshold4 = 0.5;
+    private const double SeverityThreshold5 = 0.6;
+    private const double SeverityThreshold6 = 0.8;
+    private const double SeverityThreshold7 = 1.0;
 
     /// <summary>
     /// Initializes a new instance of the OpenAIModerationEvaluator class.
@@ -55,46 +69,84 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
             return SafetyEvaluationResult.Safe;
         }
 
+        SafetyMetrics.IncrementActiveEvaluations();
         var stopwatch = Stopwatch.StartNew();
         
-        try
+   try
         {
+            using var activity = ActivitySource.StartActivity("SafetyEvaluation", ActivityKind.Server);
+            activity?.SetTag("safety.provider", _providerName);
+            activity?.SetTag("safety.text_length", text.Length);
+            activity?.SetTag("safety.model", _options.Model);
+
             _logger.LogDebug("Starting text evaluation with OpenAI Moderation. Text length: {Length}", text.Length);
 
-            var request = CreateModerationRequest(text);
-            var response = await SendModerationRequestAsync(request, cancellationToken);
-            stopwatch.Stop();
+     var request = CreateModerationRequest(text);
+         var response = await SendModerationRequestAsync(request, cancellationToken);
+      stopwatch.Stop();
 
-            var result = MapResponseToResult(response, _options.InputPolicy.Thresholds);
-            result.Metadata = new EvaluationMetadata
-            {
-                Provider = _providerName,
-                ProcessingTimeMs = stopwatch.ElapsedMilliseconds,
-                RequestId = response.Id,
-                AdditionalData = { ["Model"] = response.Model }
-            };
+        var result = MapResponseToResult(response, _options.InputPolicy.Thresholds);
+       result.Metadata = new EvaluationMetadata
+{
+  Provider = _providerName,
+       ProcessingTimeMs = stopwatch.ElapsedMilliseconds,
+  RequestId = response.Id,
+       AdditionalData = { ["Model"] = response.Model }
+        };
 
-            _logger.LogDebug("Text evaluation completed in {ElapsedMs}ms. Result: {IsSafe}",
-                stopwatch.ElapsedMilliseconds, result.IsSafe);
+            // Add telemetry tags
+       activity?.SetTag("safety.is_safe", result.IsSafe);
+            activity?.SetTag("safety.risk_score", result.RiskScore);
+            activity?.SetTag("safety.detected_categories_count", result.DetectedCategories.Count);
+        activity?.SetTag("safety.processing_time_ms", stopwatch.ElapsedMilliseconds);
+       
+if (!result.IsSafe && result.DetectedCategories.Any())
+          {
+                activity?.SetTag("safety.violated_categories", 
+        string.Join(",", result.DetectedCategories.Select(c => c.Category.ToString())));
+    }
 
-            return result;
+            // Record metrics
+          SafetyMetrics.RecordFromResult(result, "single");
+
+_logger.LogDebug("Text evaluation completed in {ElapsedMs}ms. Result: {IsSafe}",
+    stopwatch.ElapsedMilliseconds, result.IsSafe);
+
+         return result;
         }
         catch (HttpRequestException ex)
         {
             stopwatch.Stop();
-            _logger.LogError(ex, "OpenAI Moderation request failed after {ElapsedMs}ms. Status: {Status}",
-                stopwatch.ElapsedMilliseconds, ex.StatusCode);
-            return GetFallbackResult(ex);
-        }
-        catch (Exception ex)
-        {
-            stopwatch.Stop();
-            _logger.LogError(ex, "Unexpected error occurred during text evaluation after {ElapsedMs}ms",
-                stopwatch.ElapsedMilliseconds);
-            return GetFallbackResult(ex);
-        }
-    }
+        Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message);
+       Activity.Current?.SetTag("safety.error", ex.Message);
+            Activity.Current?.SetTag("safety.error_type", "HttpRequestException");
 
+            // Record error metric
+        SafetyMetrics.RecordError(_providerName, "single", "HttpRequestException");
+
+        _logger.LogError(ex, "OpenAI Moderation request failed after {ElapsedMs}ms. Status: {Status}",
+         stopwatch.ElapsedMilliseconds, ex.StatusCode);
+         return GetFallbackResult(ex);
+        }
+  catch (Exception ex)
+    {
+            stopwatch.Stop();
+         Activity.Current?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            Activity.Current?.SetTag("safety.error", ex.Message);
+        Activity.Current?.SetTag("safety.error_type", ex.GetType().Name);
+   
+     // Record error metric
+        SafetyMetrics.RecordError(_providerName, "single", ex.GetType().Name);
+
+         _logger.LogError(ex, "Unexpected error occurred during text evaluation after {ElapsedMs}ms",
+ stopwatch.ElapsedMilliseconds);
+ return GetFallbackResult(ex);
+        }
+   finally
+        {
+          SafetyMetrics.DecrementActiveEvaluations();
+}
+    }
     /// <summary>
     /// Evaluates multiple text items in batch for improved performance.
     /// </summary>
@@ -145,6 +197,7 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
         return new HashSet<HarmCategory>
         {
             HarmCategory.Hate,
+            HarmCategory.Harassment,
             HarmCategory.SelfHarm,
             HarmCategory.Sexual,
             HarmCategory.Violence
@@ -167,7 +220,16 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     {
         _httpClient.BaseAddress = new Uri(_options.Endpoint);
         _httpClient.Timeout = TimeSpan.FromMilliseconds(_options.Resilience.TimeoutInMilliseconds);
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+        
+        var apiKey = _options.GetApiKey();
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            _logger.LogWarning("OpenAI API key not found in configuration. Safety evaluation may fail.");
+        }
+        else
+        {
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
         
         if (!string.IsNullOrEmpty(_options.OrganizationId))
         {
@@ -180,9 +242,9 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// </summary>
     /// <param name="text">The text to moderate.</param>
     /// <returns>A moderation request object.</returns>
-    private object CreateModerationRequest(string text)
+    private OpenAIModerationRequest CreateModerationRequest(string text)
     {
-        return new
+        return new OpenAIModerationRequest
         {
             input = text,
             model = _options.Model
@@ -195,7 +257,7 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// <param name="request">The moderation request.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The moderation response.</returns>
-    private async Task<OpenAIModerationResponse> SendModerationRequestAsync(object request, CancellationToken cancellationToken)
+    private async Task<OpenAIModerationResponse> SendModerationRequestAsync(OpenAIModerationRequest request, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(request);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -221,15 +283,33 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
         var evaluationResult = new SafetyEvaluationResult { IsSafe = true };
         var maxScore = 0.0;
 
+        _logger.LogDebug("Processing moderation response with {ResultCount} results", response.Results?.Count ?? 0);
+
         if (response.Results?.Any() == true)
         {
             var result = response.Results.First();
             
-            // Check each category
+            _logger.LogDebug("Processing result with flagged={Flagged}, categories={Categories}, category_scores={CategoryScores}",
+                result.Flagged,
+                result.Categories?.Keys.Count ?? 0,
+                result.CategoryScores?.Keys.Count ?? 0);
+            
+            // Check each category according to the latest OpenAI Moderation API
+            CheckCategory(result, "harassment", HarmCategory.Harassment, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "harassment_threatening", HarmCategory.Harassment, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "hate", HarmCategory.Hate, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "hate_threatening", HarmCategory.Hate, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "self_harm", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "self_harm_intent", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "self_harm_instructions", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "sexual", HarmCategory.Sexual, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "sexual_minors", HarmCategory.Sexual, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "violence", HarmCategory.Violence, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "violence_graphic", HarmCategory.Violence, thresholds, evaluationResult, ref maxScore);
+        }
+        else
+        {
+            _logger.LogDebug("No results found in moderation response");
         }
 
         // Calculate overall risk score based on category scores
@@ -264,6 +344,9 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
         var flagged = GetCategoryFlagged(result, categoryName);
         var score = GetCategoryScore(result, categoryName);
 
+        // Debug logging
+        _logger.LogDebug("Checking category {CategoryName}: flagged={Flagged}, score={Score}", categoryName, flagged, score);
+
         if (flagged)
         {
             maxScore = Math.Max(maxScore, score);
@@ -280,9 +363,14 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
             // Check if the severity meets or exceeds the threshold
             if (thresholds.TryGetValue(harmCategory, out var threshold) && severity >= threshold)
             {
+                _logger.LogDebug("Category {CategoryName} exceeded threshold: severity={Severity}, threshold={Threshold}", categoryName, severity, threshold);
                 evaluationResult.IsSafe = false;
                 evaluationResult.DetectedCategories.Add(detectedHarm);
                 evaluationResult.Recommendations.Add(GetRecommendation(harmCategory, severity));
+            }
+            else
+            {
+                _logger.LogDebug("Category {CategoryName} did not exceed threshold: severity={Severity}, threshold={Threshold}", categoryName, severity, threshold);
             }
         }
     }
@@ -295,8 +383,21 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// <returns>True if the category is flagged.</returns>
     private static bool GetCategoryFlagged(OpenAIModerationResult result, string categoryName)
     {
-        var property = result.GetType().GetProperty($"{categoryName}");
-        return property?.GetValue(result) as bool? ?? false;
+        // Handle the new omni-moderation-latest response format
+        if (result.Categories?.ContainsKey(categoryName) == true)
+        {
+            return result.Categories[categoryName];
+        }
+        
+        // For backward compatibility with legacy properties, use direct property access
+        return categoryName switch
+        {
+            "hate" => result.Hate,
+            "self_harm" => result.Self_harm,
+            "sexual" => result.Sexual,
+            "violence" => result.Violence,
+            _ => false
+        };
     }
 
     /// <summary>
@@ -307,8 +408,37 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// <returns>The category score.</returns>
     private static double GetCategoryScore(OpenAIModerationResult result, string categoryName)
     {
-        var property = result.GetType().GetProperty($"{categoryName}_score");
-        return property?.GetValue(result) as double? ?? 0.0;
+        // Handle the new omni-moderation-latest response format
+        if (result.CategoryScores?.ContainsKey(categoryName) == true)
+        {
+            return result.CategoryScores[categoryName];
+        }
+        
+        // For backward compatibility with legacy properties, use direct property access
+        return categoryName switch
+        {
+            "hate" => result.Hate_score,
+            "self_harm" => result.Self_harm_score,
+            "sexual" => result.Sexual_score,
+            "violence" => result.Violence_score,
+            _ => 0.0
+        };
+    }
+
+    /// <summary>
+    /// Represents a request to the OpenAI Moderation API.
+    /// </summary>
+    internal class OpenAIModerationRequest
+    {
+        /// <summary>
+        /// Gets or sets the input text to moderate.
+        /// </summary>
+        public string input { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the model to use for moderation.
+        /// </summary>
+        public string model { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -318,18 +448,15 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// <returns>A severity level (0-7).</returns>
     private static int CalculateSeverity(double score)
     {
-        return score switch
-        {
-            <= 0.1 => 0,
-            <= 0.2 => 1,
-            <= 0.3 => 2,
-            <= 0.4 => 3,
-            <= 0.5 => 4,
-            <= 0.6 => 5,
-            <= 0.8 => 6,
-            <= 1.0 => 7,
-            _ => 0
-        };
+        if (score <= 0.1) return 0;
+        if (score <= 0.2) return 1;
+        if (score <= 0.3) return 2;
+        if (score <= 0.4) return 3;
+        if (score <= 0.5) return 4;
+        if (score <= 0.6) return 5;
+        if (score <= 0.8) return 6;
+        if (score <= 1.0) return 7;
+        return 0;
     }
 
     /// <summary>
@@ -372,6 +499,7 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
         return category switch
         {
             HarmCategory.Hate => "Content contains hate speech and should be blocked or heavily moderated.",
+            HarmCategory.Harassment => "Content contains harassment and should be blocked or heavily moderated.",
             HarmCategory.SelfHarm => "Content contains self-harm references and requires immediate attention.",
             HarmCategory.Sexual => "Content contains sexually explicit material and should be restricted.",
             HarmCategory.Violence => "Content contains violent material and should be age-restricted or blocked.",
@@ -387,10 +515,6 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     /// <returns>A risk score (0-100).</returns>
     private static int CalculateRiskScore(List<DetectedHarmCategory> detectedCategories, double maxScore)
     {
-        if (!detectedCategories.Any())
-        {
-            return 0;
-        }
 
         // Base score on maximum score, adjusted by number of categories
         var baseScore = (int)(maxScore * 100);
@@ -448,11 +572,19 @@ internal class OpenAIModerationResponse
 
 /// <summary>
 /// Represents a single moderation result from OpenAI.
+/// Updated to support the latest omni-moderation-latest model format.
 /// </summary>
 internal class OpenAIModerationResult
 {
     public bool Flagged { get; set; }
-    public List<string>? Categories { get; set; }
+    
+    // New format for omni-moderation-latest
+    public Dictionary<string, bool>? Categories { get; set; }
+    public Dictionary<string, double>? CategoryScores { get; set; }
+    public Dictionary<string, List<string>>? CategoryAppliedInputTypes { get; set; }
+    
+    // Legacy properties for backward compatibility
+    public List<string>? LegacyCategories { get; set; }
     public bool Hate { get; set; }
     public double Hate_score { get; set; }
     public bool Self_harm { get; set; }

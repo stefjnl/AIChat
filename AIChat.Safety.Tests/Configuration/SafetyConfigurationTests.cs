@@ -1,5 +1,7 @@
 using AIChat.Safety.DependencyInjection;
 using AIChat.Safety.Options;
+using AIChat.Safety.Contracts;
+using AIChat.Safety.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -164,7 +166,7 @@ public class SafetyConfigurationTests
         options.Enabled.Should().BeTrue();
         options.Endpoint.Should().Be("https://api.openai.com/v1/moderations"); // Default value
         options.ApiKey.Should().BeNull(); // Default value
-        options.Model.Should().Be("text-moderation-latest"); // Default value
+        options.Model.Should().Be("omni-moderation-latest"); // Default value
         options.FallbackBehavior.Should().Be(FallbackBehavior.FailOpen); // Default value
 
         // Check default policy values

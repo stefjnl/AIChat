@@ -1,4 +1,5 @@
 using AIChat.Safety.Contracts;
+using Microsoft.Extensions.Configuration;
 
 namespace AIChat.Safety.Options;
 
@@ -8,10 +9,12 @@ namespace AIChat.Safety.Options;
 /// </summary>
 public class SafetyOptions
 {
+    private IConfiguration? _configuration;
+
     /// <summary>
     /// Gets or sets whether safety evaluation is enabled.
     /// </summary>
-    public bool Enabled { get; set; } = true;
+  public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Gets or sets OpenAI API endpoint URL.
@@ -20,18 +23,57 @@ public class SafetyOptions
 
     /// <summary>
     /// Gets or sets OpenAI API key directly (for development/testing scenarios).
+    /// Note: This property is deprecated. Use GetApiKey() method to retrieve API key from configuration.
     /// </summary>
+    [Obsolete("Use GetApiKey() method to retrieve API key from configuration instead.")]
     public string? ApiKey { get; set; }
 
     /// <summary>
+    /// Sets the configuration instance for API key resolution.
+    /// </summary>
+    /// <param name="configuration">The configuration instance.</param>
+    public void SetConfiguration(IConfiguration configuration)
+    {
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+    }
+
+    /// <summary>
+    /// Gets the OpenAI API key from configuration or user secrets.
+    /// Checks multiple sources in order of precedence:
+    /// 1. Safety:ApiKey (for backward compatibility)
+    /// 2. Safety:OpenAI:ApiKey (nested configuration)
+    /// 3. OpenAI:ApiKey (standard OpenAI configuration path)
+    /// 4. OPENAI_API_KEY environment variable
+    /// </summary>
+    /// <returns>The API key or null if not found.</returns>
+    public string? GetApiKey()
+    {
+        if (_configuration == null)
+        {
+#pragma warning disable CS0618 // Type or member is obsolete
+     return ApiKey; // Fallback to the direct property for backward compatibility
+#pragma warning restore CS0618
+    }
+
+        // Try different sources for the API key in order of precedence
+        return _configuration["Safety:ApiKey"]
+           ?? _configuration["Safety:OpenAI:ApiKey"]
+?? _configuration["OpenAI:ApiKey"]
+       ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+#pragma warning disable CS0618
+        ?? ApiKey; // Fallback to the direct property for backward compatibility
+#pragma warning restore CS0618
+    }
+
+  /// <summary>
     /// Gets or sets OpenAI organization ID (optional).
     /// </summary>
     public string? OrganizationId { get; set; }
 
     /// <summary>
-    /// Gets or sets OpenAI model to use for moderation (defaults to "text-moderation-latest").
+    /// Gets or sets OpenAI model to use for moderation (defaults to "omni-moderation-latest").
     /// </summary>
-    public string Model { get; set; } = "text-moderation-latest";
+    public string Model { get; set; } = "omni-moderation-latest";
 
     /// <summary>
     /// Gets or sets whether to use legacy Azure Content Safety endpoint (for backward compatibility).

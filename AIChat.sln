@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIChat.Agents.Tests", "AICh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIChat.Safety", "AIChat.Safety\AIChat.Safety.csproj", "{6419A129-DBA3-4F3F-976E-6FF27D77FFC4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIChat.Safety.Tests", "AIChat.Safety.Tests\AIChat.Safety.Tests.csproj", "{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -111,6 +113,18 @@ Global
 		{6419A129-DBA3-4F3F-976E-6FF27D77FFC4}.Release|x64.Build.0 = Release|Any CPU
 		{6419A129-DBA3-4F3F-976E-6FF27D77FFC4}.Release|x86.ActiveCfg = Release|Any CPU
 		{6419A129-DBA3-4F3F-976E-6FF27D77FFC4}.Release|x86.Build.0 = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|x64.Build.0 = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Debug|x86.Build.0 = Debug|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|x64.ActiveCfg = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|x64.Build.0 = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|x86.ActiveCfg = Release|Any CPU
+		{B4E0C3B8-1BEB-4269-99A9-EF8FF19B7E71}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

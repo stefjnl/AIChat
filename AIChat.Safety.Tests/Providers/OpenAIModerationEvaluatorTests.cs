@@ -36,7 +36,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         _mockLoggerFactory.Setup(x => x.CreateLogger(It.IsAny<string>())).Returns(_mockLogger.Object);
 
         _testOptions = CreateTestOptions();
-        var optionsWrapper = Options.Create(_testOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(_testOptions);
 
         _evaluator = new OpenAIModerationEvaluator(_httpClient, optionsWrapper, _mockLogger.Object, _mockLoggerFactory.Object);
     }
@@ -51,7 +51,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var safeText = "Hello, how are you today? I hope you're having a wonderful day!";
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -66,9 +66,10 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         result.Metadata.Should().NotBeNull();
         result.Metadata!.Provider.Should().Be("OpenAI Moderation");
         result.Metadata.ProcessingTimeMs.Should().BeGreaterThan(0);
-        result.Metadata.RequestId.Should().Be(expectedResponse.Id);
+        dynamic responseDyn = expectedResponse;
+        result.Metadata.RequestId.Should().Be(responseDyn.id);
         result.Metadata.AdditionalData.Should().ContainKey("Model");
-        result.Metadata.AdditionalData["Model"].Should().Be(expectedResponse.Model);
+        result.Metadata.AdditionalData["Model"].Should().Be(responseDyn.model);
 
         VerifyLoggedMessages();
     }
@@ -101,7 +102,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         // Arrange
         var disabledOptions = CreateTestOptions();
         disabledOptions.Enabled = false;
-        var optionsWrapper = Options.Create(disabledOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(disabledOptions);
         var disabledEvaluator = new OpenAIModerationEvaluator(_httpClient, optionsWrapper, _mockLogger.Object, _mockLoggerFactory.Object);
 
         var harmfulText = "This would normally be flagged as harmful content";
@@ -126,7 +127,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var hateText = "I hate people from that country and they should be punished.";
         var expectedResponse = CreateHateModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -160,7 +161,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var selfHarmText = "I want to hurt myself and end my life.";
         var expectedResponse = CreateSelfHarmModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -188,7 +189,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var sexualText = "Explicit sexual content with detailed descriptions.";
         var expectedResponse = CreateSexualModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -216,7 +217,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var violenceText = "I want to hurt people and cause physical harm to others.";
         var expectedResponse = CreateViolenceModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -244,7 +245,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var multiHarmText = "I hate everyone and want to hurt them with violence and sexual content.";
         var expectedResponse = CreateMultipleViolationModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -273,7 +274,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         // Arrange
         var errorText = "Some text to test error handling";
         
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.InternalServerError);
 
         // Act
@@ -298,7 +299,7 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         // Arrange
         var timeoutText = "Text that will cause timeout";
         
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(req => throw new TaskCanceledException("Request timed out"));
 
         // Act
@@ -330,13 +331,13 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         var hateResponse = CreateHateModerationResponse();
         var violenceResponse = CreateViolenceModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(safeResponse));
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(hateResponse));
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(safeResponse));
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(violenceResponse));
 
         // Act
@@ -363,8 +364,9 @@ public class OpenAIModerationEvaluatorTests : IDisposable
 
         // Assert
         categories.Should().NotBeNull();
-        categories.Should().HaveCount(4);
+        categories.Should().HaveCount(5);
         categories.Should().Contain(HarmCategory.Hate);
+        categories.Should().Contain(HarmCategory.Harassment);
         categories.Should().Contain(HarmCategory.SelfHarm);
         categories.Should().Contain(HarmCategory.Sexual);
         categories.Should().Contain(HarmCategory.Violence);
@@ -406,13 +408,13 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         // Arrange
         var highThresholdOptions = CreateTestOptions();
         highThresholdOptions.InputPolicy.Thresholds[HarmCategory.Hate] = 7; // Very high threshold
-        var optionsWrapper = Options.Create(highThresholdOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(highThresholdOptions);
         var highThresholdEvaluator = new OpenAIModerationEvaluator(_httpClient, optionsWrapper, _mockLogger.Object, _mockLoggerFactory.Object);
 
         var lowSeverityHateText = "I mildly dislike this situation";
         var response = CreateLowSeverityHateResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(response));
 
         // Act
@@ -422,6 +424,65 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         result.Should().NotBeNull();
         result.IsSafe.Should().BeTrue(); // Should be safe due to high threshold
         result.DetectedCategories.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Integration test that uses the real OpenAI API to verify the omni-moderation-latest model works correctly.
+    /// This test requires a valid OpenAI API key to be set in environment variables or appsettings.json.
+    /// </summary>
+    [Fact(Skip = "Integration test - requires real OpenAI API key")]
+    public async Task EvaluateTextAsync_WithRealAPI_VerifiesOmniModerationLatestModel()
+    {
+        // Arrange
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY") ??
+                     Environment.GetEnvironmentVariable("OpenAI__ApiKey");
+        
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            // Skip test if no API key is available
+            return;
+        }
+
+        var realOptions = CreateTestOptions();
+        realOptions.ApiKey = apiKey;
+        
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(realOptions);
+        var realHttpClient = new HttpClient();
+        var realEvaluator = new OpenAIModerationEvaluator(realHttpClient, optionsWrapper, _mockLogger.Object, _mockLoggerFactory.Object);
+
+        // Test cases with different types of content
+        var testCases = new[]
+        {
+            new { Text = "Hello, how are you today? I hope you're having a wonderful day!", ShouldBeSafe = true, Description = "Safe content" },
+            new { Text = "I hate people from that country and they should be punished.", ShouldBeSafe = false, Description = "Hate content" },
+            new { Text = "I want to hurt myself and end my life.", ShouldBeSafe = false, Description = "Self-harm content" },
+            new { Text = "Explicit sexual content with detailed descriptions.", ShouldBeSafe = false, Description = "Sexual content" },
+            new { Text = "I want to hurt people and cause physical harm to others.", ShouldBeSafe = false, Description = "Violence content" }
+        };
+
+        foreach (var testCase in testCases)
+        {
+            Console.WriteLine($"Testing: {testCase.Description}");
+            
+            // Act
+            var result = await realEvaluator.EvaluateTextAsync(testCase.Text);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.IsSafe.Should().Be(testCase.ShouldBeSafe);
+            result.Metadata.Should().NotBeNull();
+            result.Metadata!.Provider.Should().Be("OpenAI Moderation");
+            result.Metadata.AdditionalData.Should().ContainKey("Model");
+            result.Metadata.AdditionalData["Model"].Should().Be("omni-moderation-latest");
+            
+            if (!testCase.ShouldBeSafe)
+            {
+                result.DetectedCategories.Should().NotBeEmpty();
+                result.RiskScore.Should().BeGreaterThan(0);
+            }
+            
+            Console.WriteLine($"✓ {testCase.Description}: IsSafe={result.IsSafe}, Categories={result.DetectedCategories?.Count ?? 0}");
+        }
     }
 
     private void VerifyLoggedMessages()
@@ -452,13 +513,14 @@ public class OpenAIModerationEvaluatorTests : IDisposable
             Enabled = true,
             Endpoint = "https://api.openai.com/v1/moderations",
             ApiKey = "test-api-key",
-            Model = "text-moderation-latest",
+            Model = "omni-moderation-latest",
             FallbackBehavior = FallbackBehavior.FailOpen,
             InputPolicy = new PolicySettings
             {
                 Thresholds = new Dictionary<HarmCategory, int>
                 {
                     [HarmCategory.Hate] = 2,
+                    [HarmCategory.Harassment] = 2,
                     [HarmCategory.SelfHarm] = 2,
                     [HarmCategory.Sexual] = 2,
                     [HarmCategory.Violence] = 2
@@ -476,21 +538,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-123456789",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = false,
-                    categories = new { },
-                    hate = false,
-                    hate_score = 0.01,
-                    self_harm = false,
-                    self_harm_score = 0.02,
-                    sexual = false,
-                    sexual_score = 0.01,
-                    violence = false,
-                    violence_score = 0.01
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = false,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.01,
+                        ["harassment_threatening"] = 0.01,
+                        ["hate"] = 0.01,
+                        ["hate_threatening"] = 0.01,
+                        ["self_harm"] = 0.02,
+                        ["self_harm_instructions"] = 0.01,
+                        ["self_harm_intent"] = 0.01,
+                        ["sexual"] = 0.01,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.01,
+                        ["violence_graphic"] = 0.01
+                    }
                 }
             }
         };
@@ -501,21 +582,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.8,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = false,
-                    violence_score = 0.2
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = true,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.8,
+                        ["hate_threatening"] = 0.1,
+                        ["self_harm"] = 0.1,
+                        ["self_harm_instructions"] = 0.02,
+                        ["self_harm_intent"] = 0.05,
+                        ["sexual"] = 0.05,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.2,
+                        ["violence_graphic"] = 0.1
+                    }
                 }
             }
         };
@@ -526,21 +626,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-selfharm-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { self_harm = true },
-                    hate = false,
-                    hate_score = 0.1,
-                    self_harm = true,
-                    self_harm_score = 0.9,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = false,
-                    violence_score = 0.1
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = false,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = true,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = true,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.1,
+                        ["hate_threatening"] = 0.05,
+                        ["self_harm"] = 0.9,
+                        ["self_harm_instructions"] = 0.1,
+                        ["self_harm_intent"] = 0.8,
+                        ["sexual"] = 0.05,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.1,
+                        ["violence_graphic"] = 0.05
+                    }
                 }
             }
         };
@@ -551,21 +670,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-sexual-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { sexual = true },
-                    hate = false,
-                    hate_score = 0.1,
-                    self_harm = false,
-                    self_harm_score = 0.05,
-                    sexual = true,
-                    sexual_score = 0.85,
-                    violence = false,
-                    violence_score = 0.15
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = false,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = true,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.1,
+                        ["hate_threatening"] = 0.05,
+                        ["self_harm"] = 0.05,
+                        ["self_harm_instructions"] = 0.01,
+                        ["self_harm_intent"] = 0.02,
+                        ["sexual"] = 0.85,
+                        ["sexual_minors"] = 0.1,
+                        ["violence"] = 0.15,
+                        ["violence_graphic"] = 0.1
+                    }
                 }
             }
         };
@@ -576,21 +714,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-violence-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { violence = true },
-                    hate = false,
-                    hate_score = 0.2,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.15,
-                    violence = true,
-                    violence_score = 0.75
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = false,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = true,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.2,
+                        ["hate_threatening"] = 0.1,
+                        ["self_harm"] = 0.1,
+                        ["self_harm_instructions"] = 0.02,
+                        ["self_harm_intent"] = 0.05,
+                        ["sexual"] = 0.15,
+                        ["sexual_minors"] = 0.05,
+                        ["violence"] = 0.75,
+                        ["violence_graphic"] = 0.3
+                    }
                 }
             }
         };
@@ -601,21 +758,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-multiple-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true, sexual = true, violence = true },
-                    hate = true,
-                    hate_score = 0.7,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = true,
-                    sexual_score = 0.6,
-                    violence = true,
-                    violence_score = 0.8
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = true,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = true,
+                        ["sexual_minors"] = false,
+                        ["violence"] = true,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.2,
+                        ["harassment_threatening"] = 0.1,
+                        ["hate"] = 0.7,
+                        ["hate_threatening"] = 0.3,
+                        ["self_harm"] = 0.1,
+                        ["self_harm_instructions"] = 0.02,
+                        ["self_harm_intent"] = 0.05,
+                        ["sexual"] = 0.6,
+                        ["sexual_minors"] = 0.1,
+                        ["violence"] = 0.8,
+                        ["violence_graphic"] = 0.4
+                    }
                 }
             }
         };
@@ -626,21 +802,40 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         return new
         {
             id = "modr-low-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.3, // Low severity
-                    self_harm = false,
-                    self_harm_score = 0.05,
-                    sexual = false,
-                    sexual_score = 0.02,
-                    violence = false,
-                    violence_score = 0.1
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = true,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.3, // Low severity
+                        ["hate_threatening"] = 0.1,
+                        ["self_harm"] = 0.05,
+                        ["self_harm_instructions"] = 0.01,
+                        ["self_harm_intent"] = 0.02,
+                        ["sexual"] = 0.02,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.1,
+                        ["violence_graphic"] = 0.05
+                    }
                 }
             }
         };

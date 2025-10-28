@@ -2,13 +2,12 @@ using AIChat.Safety.Contracts;
 using AIChat.Safety.Options;
 using AIChat.Safety.Providers;
 using AIChat.Safety.Services;
+using AIChat.Safety.Middleware;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Polly;
-using Polly.Contrib.WaitAndRetry;
-using Polly.Extensions.Http;
 using System.Net;
 
 namespace AIChat.Safety.DependencyInjection;
@@ -28,8 +27,13 @@ public static class SafetyServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Bind safety options
-        services.Configure<SafetyOptions>(configuration.GetSection("Safety"));
+        // Bind safety options with configuration
+        services.AddOptions<SafetyOptions>()
+            .Configure<IConfiguration>((options, config) =>
+            {
+                config.GetSection("Safety").Bind(options);
+                options.SetConfiguration(config);
+            });
 
         // Register core safety services
         services.AddSafetyCore();
@@ -57,25 +61,22 @@ public static class SafetyServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the core safety services with Azure Content Safety integration.
+    /// Adds the core safety services with proper HttpClient configuration.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
     private static IServiceCollection AddSafetyCore(this IServiceCollection services)
     {
-        // Register OpenAI Moderation HTTP client with resilience
-        services.AddHttpClient<OpenAIModerationEvaluator>((sp, client) =>
+        // Register OpenAI Moderation HTTP client with proper typed client pattern and resilience
+        services.AddHttpClient<ISafetyEvaluator, OpenAIModerationEvaluator>((sp, client) =>
         {
             var options = sp.GetRequiredService<IOptions<SafetyOptions>>().Value;
             client.BaseAddress = new Uri(options.Endpoint);
             client.Timeout = TimeSpan.FromMilliseconds(options.Resilience.TimeoutInMilliseconds);
-        });
-
-        // Register safety evaluator
-        services.AddSingleton<ISafetyEvaluator, OpenAIModerationEvaluator>();
+        })
+        .AddStandardResilienceHandler(); // Use standard resilience with default settings
 
         // Register safety evaluation service
-        services.AddSingleton<SafetyEvaluationService>();
         services.AddSingleton<ISafetyEvaluationService, SafetyEvaluationService>();
 
         // Add health check for safety service
@@ -156,77 +157,40 @@ public static class SafetyServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Creates a resilience policy for safety service HTTP calls.
+    /// Wraps an IChatClient with safety middleware for content moderation.
     /// </summary>
-    /// <returns>A resilience policy.</returns>
-    private static IAsyncPolicy<HttpResponseMessage> GetResiliencePolicy()
+    /// <param name="innerClient">The inner chat client to wrap.</param>
+    /// <param name="serviceProvider">The service provider for resolving dependencies.</param>
+    /// <returns>A chat client wrapped with safety middleware.</returns>
+    public static IChatClient UseSafetyMiddleware(
+  this IChatClient innerClient,
+        IServiceProvider serviceProvider)
     {
-        var delay = Backoff.ExponentialBackoff(TimeSpan.FromMilliseconds(1000), retryCount: 3);
+     if (innerClient == null) throw new ArgumentNullException(nameof(innerClient));
+        if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
 
-        var retryPolicy = Policy<HttpResponseMessage>
-            .Handle<HttpRequestException>()
-            .OrResult(response => response.StatusCode >= HttpStatusCode.InternalServerError || response.StatusCode == HttpStatusCode.RequestTimeout)
-            .WaitAndRetryAsync(delay);
+        var safetyService = serviceProvider.GetRequiredService<ISafetyEvaluationService>();
+        var logger = serviceProvider.GetRequiredService<ILogger<SafetyChatClientMiddleware>>();
 
-        var circuitBreakerPolicy = Policy<HttpResponseMessage>
-            .Handle<HttpRequestException>()
-            .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
-
-        return Policy.WrapAsync(circuitBreakerPolicy, retryPolicy);
+        return new SafetyChatClientMiddleware(innerClient, safetyService, logger);
     }
 
     /// <summary>
-    /// Retrieves the API key from configuration or environment variables.
+    /// Configures a chat client builder to use safety middleware.
     /// </summary>
-    /// <param name="serviceProvider">The service provider.</param>
-    /// <param name="options">The safety options.</param>
-    /// <returns>The API key or null if not found.</returns>
-    private static string? GetApiKeyFromConfiguration(IServiceProvider serviceProvider, SafetyOptions options)
+    /// <param name="builder">The chat client builder.</param>
+    /// <returns>The chat client builder for chaining.</returns>
+    public static IChatClient UseSafetyMiddleware(
+        this IChatClient client,
+      ISafetyEvaluationService safetyService,
+        ILogger<SafetyChatClientMiddleware> logger)
     {
-        var configuration = serviceProvider.GetService<IConfiguration>();
-        
-        // Try different sources for the API key
-        return configuration?[$"Safety:{nameof(options.ApiKey)}"]
-               ?? configuration?["OpenAI:ApiKey"]
-               ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-               ?? Environment.GetEnvironmentVariable("MODERATION_API_KEY");
-    }
-}
+        if (client == null) throw new ArgumentNullException(nameof(client));
+        if (safetyService == null) throw new ArgumentNullException(nameof(safetyService));
+        if (logger == null) throw new ArgumentNullException(nameof(logger));
 
-/// <summary>
-/// Interface for the safety evaluation service to support dependency injection.
-/// </summary>
-public interface ISafetyEvaluationService
-{
-    /// <summary>
-    /// Evaluates user input for safety violations.
-    /// </summary>
-    Task<SafetyEvaluationResult> EvaluateUserInputAsync(string message, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Evaluates AI-generated output for safety violations.
-    /// </summary>
-    Task<SafetyEvaluationResult> EvaluateOutputAsync(string output, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Evaluates multiple messages in batch.
-    /// </summary>
-    Task<IReadOnlyList<SafetyEvaluationResult>> EvaluateBatchAsync(IEnumerable<string> messages, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Creates a streaming evaluator.
-    /// </summary>
-    IStreamingSafetyEvaluator CreateStreamingEvaluator();
-
-    /// <summary>
-    /// Filters and sanitizes text content.
-    /// </summary>
-    Task<FilteredTextResult?> FilterTextAsync(string text, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Gets safety status information.
-    /// </summary>
-    SafetyStatus GetSafetyStatus();
+    return new SafetyChatClientMiddleware(client, safetyService, logger);
+ }
 }
 
 /// <summary>

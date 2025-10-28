@@ -27,6 +27,10 @@ if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>();
 }
 
+// Add OpenAI configuration section for API key
+// The API key should be stored in user secrets with the key "OpenAI:ApiKey"
+// Example: dotnet user-secrets set "OpenAI:ApiKey" "your-api-key-here"
+
 // Manual configuration loading (same approach as unit tests)
 var providersSection = builder.Configuration.GetSection("Providers");
 Console.WriteLine($"Providers section exists: {providersSection.Exists()}");
@@ -186,6 +190,7 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.AddSource("Microsoft.Extensions.AI")
                .AddSource("Microsoft.Agents.AI")
+               .AddSource("AIChat.Safety") // Add safety activity source
                .AddSource("agent-telemetry-source"); // For custom agent telemetry
         
         // Add ASP.NET Core instrumentation
@@ -222,7 +227,8 @@ builder.Services.AddOpenTelemetry()
         metrics.AddAspNetCoreInstrumentation()
                .AddHttpClientInstrumentation()
                .AddMeter("Microsoft.Extensions.AI")
-               .AddMeter("Microsoft.Agents.AI");
+               .AddMeter("Microsoft.Agents.AI")
+               .AddMeter("AIChat.Safety"); // Add safety metrics
         
         // Configure metric exporters
         if (builder.Environment.IsDevelopment())

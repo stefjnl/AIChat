@@ -13,7 +13,7 @@ namespace AIChat.Safety.Providers;
 /// OpenAI Moderation API implementation of the IStreamingSafetyEvaluator interface.
 /// Provides real-time streaming text safety evaluation using OpenAI's Moderation API.
 /// </summary>
-internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
+public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
 {
     private readonly HttpClient _httpClient;
     private readonly SafetyOptions _options;
@@ -25,6 +25,16 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     private int _chunkCount = 0;
     private bool _hasViolations = false;
     private bool _disposed = false;
+
+    // Severity threshold constants
+    private static readonly double SeverityThreshold0 = 0.1;
+    private static readonly double SeverityThreshold1 = 0.2;
+    private static readonly double SeverityThreshold2 = 0.3;
+    private static readonly double SeverityThreshold3 = 0.4;
+    private static readonly double SeverityThreshold4 = 0.5;
+    private static readonly double SeverityThreshold5 = 0.6;
+    private static readonly double SeverityThreshold6 = 0.8;
+    private static readonly double SeverityThreshold7 = 1.0;
 
     /// <summary>
     /// Initializes a new instance of the OpenAIStreamingSafetyEvaluator class.
@@ -206,12 +216,21 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     {
         _httpClient.BaseAddress = new Uri(_options.Endpoint);
         _httpClient.Timeout = TimeSpan.FromMilliseconds(_options.Resilience.TimeoutInMilliseconds);
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
-        
-        if (!string.IsNullOrEmpty(_options.OrganizationId))
-        {
-            _httpClient.DefaultRequestHeaders.Add("OpenAI-Organization", _options.OrganizationId);
+   
+        var apiKey = _options.GetApiKey();
+        if (string.IsNullOrEmpty(apiKey))
+     {
+    _logger.LogWarning("OpenAI API key not found in configuration. Streaming safety evaluation may fail.");
         }
+        else
+        {
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+        
+    if (!string.IsNullOrEmpty(_options.OrganizationId))
+      {
+      _httpClient.DefaultRequestHeaders.Add("OpenAI-Organization", _options.OrganizationId);
+    }
     }
 
     /// <summary>
@@ -268,9 +287,9 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// </summary>
     /// <param name="text">The text to moderate.</param>
     /// <returns>A moderation request object.</returns>
-    private object CreateModerationRequest(string text)
+    private ModerationRequest CreateModerationRequest(string text)
     {
-        return new
+        return new ModerationRequest
         {
             input = text,
             model = _options.Model
@@ -283,7 +302,7 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// <param name="request">The moderation request.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The moderation response.</returns>
-    private async Task<OpenAIModerationResponse> SendModerationRequestAsync(object request, CancellationToken cancellationToken)
+    private async Task<OpenAIModerationResponse> SendModerationRequestAsync(ModerationRequest request, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(request);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -313,11 +332,18 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
         {
             var result = response.Results.First();
             
-            // Check each category
+            // Check each category according to the latest OpenAI Moderation API
+            CheckCategory(result, "harassment", HarmCategory.Harassment, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "harassment/threatening", HarmCategory.Harassment, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "hate", HarmCategory.Hate, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "hate/threatening", HarmCategory.Hate, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "self_harm", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "self_harm/intent", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "self_harm/instructions", HarmCategory.SelfHarm, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "sexual", HarmCategory.Sexual, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "sexual/minors", HarmCategory.Sexual, thresholds, evaluationResult, ref maxScore);
             CheckCategory(result, "violence", HarmCategory.Violence, thresholds, evaluationResult, ref maxScore);
+            CheckCategory(result, "violence/graphic", HarmCategory.Violence, thresholds, evaluationResult, ref maxScore);
         }
 
         // Calculate overall risk score based on category scores
@@ -383,8 +409,21 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// <returns>True if the category is flagged.</returns>
     private static bool GetCategoryFlagged(OpenAIModerationResult result, string categoryName)
     {
-        var property = result.GetType().GetProperty($"{categoryName}");
-        return property?.GetValue(result) as bool? ?? false;
+        // Handle the new omni-moderation-latest response format
+        if (result.Categories?.ContainsKey(categoryName) == true)
+        {
+            return result.Categories[categoryName];
+        }
+        
+        // For backward compatibility with legacy properties, use direct property access
+        return categoryName switch
+        {
+            "hate" => result.Hate,
+            "self_harm" => result.Self_harm,
+            "sexual" => result.Sexual,
+            "violence" => result.Violence,
+            _ => false
+        };
     }
 
     /// <summary>
@@ -395,8 +434,21 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// <returns>The category score.</returns>
     private static double GetCategoryScore(OpenAIModerationResult result, string categoryName)
     {
-        var property = result.GetType().GetProperty($"{categoryName}_score");
-        return property?.GetValue(result) as double? ?? 0.0;
+        // Handle the new omni-moderation-latest response format
+        if (result.CategoryScores?.ContainsKey(categoryName) == true)
+        {
+            return result.CategoryScores[categoryName];
+        }
+        
+        // For backward compatibility with legacy properties, use direct property access
+        return categoryName switch
+        {
+            "hate" => result.Hate_score,
+            "self_harm" => result.Self_harm_score,
+            "sexual" => result.Sexual_score,
+            "violence" => result.Violence_score,
+            _ => 0.0
+        };
     }
 
     /// <summary>
@@ -404,20 +456,17 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// </summary>
     /// <param name="score">The OpenAI score.</param>
     /// <returns>A severity level (0-7).</returns>
-    private static int CalculateSeverity(double score)
+ private static int CalculateSeverity(double score)
     {
-        return score switch
-        {
-            <= 0.1 => 0,
-            <= 0.2 => 1,
-            <= 0.3 => 2,
-            <= 0.4 => 3,
-            <= 0.5 => 4,
-            <= 0.6 => 5,
-            <= 0.8 => 6,
-            <= 1.0 => 7,
-            _ => 0
-        };
+        if (score <= 0.1) return 0;
+        if (score <= 0.2) return 1;
+      if (score <= 0.3) return 2;
+        if (score <= 0.4) return 3;
+        if (score <= 0.5) return 4;
+ if (score <= 0.6) return 5;
+        if (score <= 0.8) return 6;
+        if (score <= 1.0) return 7;
+        return 0;
     }
 
     /// <summary>
@@ -460,6 +509,7 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
         return category switch
         {
             HarmCategory.Hate => "Streaming content contains hate speech and should be terminated immediately.",
+            HarmCategory.Harassment => "Streaming content contains harassment and should be terminated immediately.",
             HarmCategory.SelfHarm => "Streaming content contains self-harm references and requires immediate intervention.",
             HarmCategory.Sexual => "Streaming content contains sexually explicit material and should be blocked.",
             HarmCategory.Violence => "Streaming content contains violent material and should be terminated.",
@@ -543,4 +593,13 @@ internal class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
             _disposed = true;
         }
     }
+}
+
+/// <summary>
+/// Represents a request to the OpenAI Moderation API.
+/// </summary>
+internal class ModerationRequest
+{
+    public string input { get; set; } = string.Empty;
+    public string model { get; set; } = string.Empty;
 }

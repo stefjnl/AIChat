@@ -27,7 +27,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         _mockLogger = new Mock<ILogger<SafetyEvaluationService>>();
 
         _testOptions = CreateTestOptions();
-        var optionsWrapper = Options.Create(_testOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(_testOptions);
 
         _service = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
     }
@@ -123,7 +123,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Arrange
         var disabledOptions = CreateTestOptions();
         disabledOptions.Enabled = false;
-        var optionsWrapper = Options.Create(disabledOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(disabledOptions);
         var disabledService = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
 
         var harmfulInput = "This would normally be flagged as harmful";
@@ -355,7 +355,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Arrange
         var disabledOptions = CreateTestOptions();
         disabledOptions.Enabled = false;
-        var optionsWrapper = Options.Create(disabledOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(disabledOptions);
         var disabledService = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
 
         // Act
@@ -413,7 +413,7 @@ public class SafetyEvaluationServiceTests : IDisposable
     public async Task FilterTextAsync_WithoutFilter_ReturnsNull()
     {
         // Arrange
-        var serviceWithoutFilter = new SafetyEvaluationService(_mockEvaluator.Object, Options.Create(_testOptions), _mockLogger.Object, null);
+        var serviceWithoutFilter = new SafetyEvaluationService(_mockEvaluator.Object, Microsoft.Extensions.Options.Options.Create(_testOptions), _mockLogger.Object, null);
         var textToFilter = "Some text to filter";
 
         // Act
@@ -434,7 +434,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Arrange
         var disabledOptions = CreateTestOptions();
         disabledOptions.Enabled = false;
-        var optionsWrapper = Options.Create(disabledOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(disabledOptions);
         var disabledService = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
 
         var textToFilter = "Some text that would normally be filtered";
@@ -590,7 +590,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Arrange
         var failClosedOptions = CreateTestOptions();
         failClosedOptions.FallbackBehavior = FallbackBehavior.FailClosed;
-        var optionsWrapper = Options.Create(failClosedOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(failClosedOptions);
         var failClosedService = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
 
         var userInput = "Some input that causes error";
@@ -624,7 +624,7 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Arrange
         var highThresholdOptions = CreateTestOptions();
         highThresholdOptions.InputPolicy.Thresholds[HarmCategory.Hate] = 7; // Very high threshold
-        var optionsWrapper = Options.Create(highThresholdOptions);
+        var optionsWrapper = Microsoft.Extensions.Options.Options.Create(highThresholdOptions);
         var highThresholdService = new SafetyEvaluationService(_mockEvaluator.Object, optionsWrapper, _mockLogger.Object, _mockFilter.Object);
 
         var userInput = "Content with low severity hate";

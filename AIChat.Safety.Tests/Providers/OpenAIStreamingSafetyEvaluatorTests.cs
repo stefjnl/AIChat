@@ -116,7 +116,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
 
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -155,7 +155,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
 
         var expectedResponse = CreateHateModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -186,7 +186,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         var longChunk = new string('a', 350); // Exceeds 300 character threshold
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -197,7 +197,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         result.IsSafe.Should().BeTrue();
         
         // Should have made an HTTP request due to character count threshold
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -210,7 +210,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         var sentenceChunk = "This is a complete sentence. ";
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -221,7 +221,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         result.IsSafe.Should().BeTrue();
         
         // Should have made an HTTP request due to sentence boundary
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -234,7 +234,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         var paragraphChunk = "This is a paragraph.\n\nThis is another paragraph.";
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -245,7 +245,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         result.IsSafe.Should().BeTrue();
         
         // Should have made an HTTP request due to paragraph boundary
-        _mockHttp.GetMatchCount().Should().Be(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().Be(1);
     }
 
     /// <summary>
@@ -258,7 +258,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         var smallChunks = Enumerable.Repeat("small chunk ", 10).ToList();
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -273,7 +273,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         results.Should().HaveCount(smallChunks.Count);
         
         // Should have made at least one HTTP request due to periodic evaluation (every 10 chunks)
-        _mockHttp.GetMatchCount().Should().BeGreaterOrEqualTo(1);
+        _mockHttp.GetMatchCount(_mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)).Should().BeGreaterOrEqualTo(1);
     }
 
     /// <summary>
@@ -294,7 +294,8 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         result.RiskScore.Should().Be(0);
         
         // Should not have made any HTTP requests for empty content
-        _mockHttp.GetMatchCount().Should().Be(0);
+        var mockRequest = _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint);
+        _mockHttp.GetMatchCount(mockRequest).Should().Be(0);
     }
 
     /// <summary>
@@ -320,7 +321,8 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         result.DetectedCategories.Should().BeEmpty();
         
         // Should not have made any HTTP requests when disabled
-        _mockHttp.GetMatchCount().Should().Be(0);
+        var mockRequest = _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint);
+        _mockHttp.GetMatchCount(mockRequest).Should().Be(0);
     }
 
     /// <summary>
@@ -387,7 +389,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
 
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act - Process some chunks
@@ -426,7 +428,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
 
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -452,7 +454,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
 
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -542,7 +544,7 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         var chunk = "Test chunk for metadata";
         var expectedResponse = CreateSafeModerationResponse();
 
-        _mockHttp.When(HttpMethod.Post, _testOptions.Endpoint)
+        _mockHttp.When(HttpMethod.Post, "")
             .Respond(HttpStatusCode.OK, JsonContent.Create(expectedResponse));
 
         // Act
@@ -565,13 +567,14 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
             Enabled = true,
             Endpoint = "https://api.openai.com/v1/moderations",
             ApiKey = "test-api-key",
-            Model = "text-moderation-latest",
+            Model = "omni-moderation-latest",
             FallbackBehavior = FallbackBehavior.FailOpen,
             OutputPolicy = new PolicySettings
             {
                 Thresholds = new Dictionary<HarmCategory, int>
                 {
                     [HarmCategory.Hate] = 2,
+                    [HarmCategory.Harassment] = 2,
                     [HarmCategory.SelfHarm] = 2,
                     [HarmCategory.Sexual] = 2,
                     [HarmCategory.Violence] = 2
@@ -589,21 +592,40 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         return new
         {
             id = "modr-streaming-safe-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = false,
-                    categories = new { },
-                    hate = false,
-                    hate_score = 0.01,
-                    self_harm = false,
-                    self_harm_score = 0.02,
-                    sexual = false,
-                    sexual_score = 0.01,
-                    violence = false,
-                    violence_score = 0.01
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = false,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.01,
+                        ["harassment_threatening"] = 0.01,
+                        ["hate"] = 0.01,
+                        ["hate_threatening"] = 0.01,
+                        ["self_harm"] = 0.02,
+                        ["self_harm_instructions"] = 0.01,
+                        ["self_harm_intent"] = 0.01,
+                        ["sexual"] = 0.01,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.01,
+                        ["violence_graphic"] = 0.01
+                    }
                 }
             }
         };
@@ -614,21 +636,40 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         return new
         {
             id = "modr-streaming-hate-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true },
-                    hate = true,
-                    hate_score = 0.8,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = false,
-                    violence_score = 0.2
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = true,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = false,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.1,
+                        ["harassment_threatening"] = 0.05,
+                        ["hate"] = 0.8,
+                        ["hate_threatening"] = 0.1,
+                        ["self_harm"] = 0.1,
+                        ["self_harm_instructions"] = 0.02,
+                        ["self_harm_intent"] = 0.05,
+                        ["sexual"] = 0.05,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.2,
+                        ["violence_graphic"] = 0.1
+                    }
                 }
             }
         };
@@ -639,21 +680,40 @@ public class OpenAIStreamingSafetyEvaluatorTests : IDisposable
         return new
         {
             id = "modr-streaming-multiple-123",
-            model = "text-moderation-latest",
+            model = "omni-moderation-latest",
             results = new[]
             {
                 new
                 {
                     flagged = true,
-                    categories = new { hate = true, violence = true },
-                    hate = true,
-                    hate_score = 0.7,
-                    self_harm = false,
-                    self_harm_score = 0.1,
-                    sexual = false,
-                    sexual_score = 0.05,
-                    violence = true,
-                    violence_score = 0.8
+                    categories = new Dictionary<string, bool>
+                    {
+                        ["harassment"] = false,
+                        ["harassment_threatening"] = false,
+                        ["hate"] = true,
+                        ["hate_threatening"] = false,
+                        ["self_harm"] = false,
+                        ["self_harm_instructions"] = false,
+                        ["self_harm_intent"] = false,
+                        ["sexual"] = false,
+                        ["sexual_minors"] = false,
+                        ["violence"] = true,
+                        ["violence_graphic"] = false
+                    },
+                    category_scores = new Dictionary<string, double>
+                    {
+                        ["harassment"] = 0.2,
+                        ["harassment_threatening"] = 0.1,
+                        ["hate"] = 0.7,
+                        ["hate_threatening"] = 0.3,
+                        ["self_harm"] = 0.1,
+                        ["self_harm_instructions"] = 0.02,
+                        ["self_harm_intent"] = 0.05,
+                        ["sexual"] = 0.05,
+                        ["sexual_minors"] = 0.01,
+                        ["violence"] = 0.8,
+                        ["violence_graphic"] = 0.4
+                    }
                 }
             }
         };

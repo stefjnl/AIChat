@@ -11,6 +11,11 @@ public enum HarmCategory
     Hate,
 
     /// <summary>
+    /// Content that targets individuals or groups with abusive or threatening behavior.
+    /// </summary>
+    Harassment,
+
+    /// <summary>
     /// Content that encourages or provides instructions for self-harm or suicide.
     /// </summary>
     SelfHarm,
