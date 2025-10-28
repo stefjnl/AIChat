@@ -83,7 +83,7 @@ public class SafetyConfigurationTests
         // Assert
         options.Enabled.Should().BeTrue();
         options.Endpoint.Should().Be("https://api.openai.com/v1/moderations");
-        options.ApiKey.Should().Be("test-api-key");
+        options.GetApiKey().Should().Be("test-api-key");
         options.OrganizationId.Should().Be("test-org-id");
         options.Model.Should().Be("text-moderation-latest");
         options.FallbackBehavior.Should().Be(FallbackBehavior.FailOpen);
@@ -165,7 +165,7 @@ public class SafetyConfigurationTests
         // Assert
         options.Enabled.Should().BeTrue();
         options.Endpoint.Should().Be("https://api.openai.com/v1/moderations"); // Default value
-        options.ApiKey.Should().BeNull(); // Default value
+        options.GetApiKey().Should().BeNull(); // Default value
         options.Model.Should().Be("omni-moderation-latest"); // Default value
         options.FallbackBehavior.Should().Be(FallbackBehavior.FailOpen); // Default value
 
@@ -238,7 +238,9 @@ public class SafetyConfigurationTests
         services.AddAISafetyServices(options =>
         {
             options.Enabled = false;
+#pragma warning disable CS0618 // Type or member is obsolete
             options.ApiKey = "custom-key";
+#pragma warning restore CS0618
             options.FallbackBehavior = FallbackBehavior.FailClosed;
             options.Resilience.TimeoutInMilliseconds = 5000;
         });
@@ -248,7 +250,7 @@ public class SafetyConfigurationTests
 
         // Assert
         safetyOptions.Enabled.Should().BeFalse();
-        safetyOptions.ApiKey.Should().Be("custom-key");
+        safetyOptions.GetApiKey().Should().Be("custom-key");
         safetyOptions.FallbackBehavior.Should().Be(FallbackBehavior.FailClosed);
         safetyOptions.Resilience.TimeoutInMilliseconds.Should().Be(5000);
     }

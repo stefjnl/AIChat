@@ -457,17 +457,17 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// <param name="score">The OpenAI score.</param>
     /// <returns>A severity level (0-7).</returns>
  private static int CalculateSeverity(double score)
-    {
-        if (score <= 0.1) return 0;
-        if (score <= 0.2) return 1;
-      if (score <= 0.3) return 2;
-        if (score <= 0.4) return 3;
-        if (score <= 0.5) return 4;
- if (score <= 0.6) return 5;
-        if (score <= 0.8) return 6;
-        if (score <= 1.0) return 7;
-        return 0;
-    }
+ {
+     if (score <= SeverityThreshold0) return 0;
+     if (score <= SeverityThreshold1) return 1;
+     if (score <= SeverityThreshold2) return 2;
+     if (score <= SeverityThreshold3) return 3;
+     if (score <= SeverityThreshold4) return 4;
+     if (score <= SeverityThreshold5) return 5;
+     if (score <= SeverityThreshold6) return 6;
+     if (score <= SeverityThreshold7) return 7;
+     return 0;
+ }
 
     /// <summary>
     /// Calculates confidence score based on OpenAI score.

@@ -10,14 +10,14 @@ namespace AIChat.Agents.Providers;
 public class ProviderClientFactory
 {
     private readonly ProvidersConfiguration _config;
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceProvider? _serviceProvider;
 
     public ProviderClientFactory(
         ProvidersConfiguration config,
-        IServiceProvider serviceProvider)
+        IServiceProvider? serviceProvider = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
-        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _serviceProvider = serviceProvider;
     }
 
     public IChatClient CreateChatClient(string providerName)
@@ -34,8 +34,14 @@ public class ProviderClientFactory
             _ => throw new ArgumentException($"Unknown provider: {providerName}")
         };
 
-        // Wrap with safety middleware
-        return baseClient.UseSafetyMiddleware(_serviceProvider);
+        // Wrap with safety middleware only if service provider is available
+        if (_serviceProvider != null)
+        {
+            return baseClient.UseSafetyMiddleware(_serviceProvider);
+        }
+        
+        // Return base client without safety middleware for testing
+        return baseClient;
     }
 
     private IChatClient CreateOpenRouterClient(ProviderSettings settings)

@@ -397,8 +397,8 @@ public class SafetyEvaluationServiceTests : IDisposable
         // Assert
         result.Should().NotBeNull();
         result.Should().Be(expectedFilteredResult);
-        result.WasFiltered.Should().BeTrue();
-        result.FilteredText.Should().Contain("[REDACTED]");
+        result!.WasFiltered.Should().BeTrue();
+        result!.FilteredText.Should().Contain("[REDACTED]");
 
         _mockFilter.Verify(x => x.FilterTextAsync(textToFilter, It.IsAny<CancellationToken>()), Times.Once);
         
@@ -444,9 +444,9 @@ public class SafetyEvaluationServiceTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.OriginalText.Should().Be(textToFilter);
-        result.FilteredText.Should().Be(textToFilter);
-        result.WasFiltered.Should().BeFalse();
+        result!.OriginalText.Should().Be(textToFilter);
+        result!.FilteredText.Should().Be(textToFilter);
+        result!.WasFiltered.Should().BeFalse();
 
         // Should not call the filter when disabled
         _mockFilter.Verify(x => x.FilterTextAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -697,7 +697,9 @@ public class SafetyEvaluationServiceTests : IDisposable
         {
             Enabled = true,
             Endpoint = "https://api.openai.com/v1/moderations",
+#pragma warning disable CS0618 // Type or member is obsolete
             ApiKey = "test-api-key",
+#pragma warning restore CS0618
             Model = "text-moderation-latest",
             FallbackBehavior = FallbackBehavior.FailOpen,
             InputPolicy = new PolicySettings

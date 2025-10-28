@@ -75,8 +75,8 @@ public class ProviderIntegrationTests : IDisposable
             throw new InvalidOperationException("Provider configuration is missing or empty. Check appsettings.json and user secrets.");
         }
 
-        // Create factory (pass null for IServiceProvider in tests - safety middleware won't be applied)
-        _factory = new ProviderClientFactory(providersConfig, null!);
+        // Create factory without service provider for testing (safety middleware won't be applied)
+        _factory = new ProviderClientFactory(providersConfig);
     }
 
     [Fact]

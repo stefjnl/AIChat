@@ -444,7 +444,9 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         }
 
         var realOptions = CreateTestOptions();
+#pragma warning disable CS0618 // Type or member is obsolete
         realOptions.ApiKey = apiKey;
+#pragma warning restore CS0618
         
         var optionsWrapper = Microsoft.Extensions.Options.Options.Create(realOptions);
         var realHttpClient = new HttpClient();
@@ -512,7 +514,9 @@ public class OpenAIModerationEvaluatorTests : IDisposable
         {
             Enabled = true,
             Endpoint = "https://api.openai.com/v1/moderations",
+#pragma warning disable CS0618 // Type or member is obsolete
             ApiKey = "test-api-key",
+#pragma warning restore CS0618
             Model = "omni-moderation-latest",
             FallbackBehavior = FallbackBehavior.FailOpen,
             InputPolicy = new PolicySettings
