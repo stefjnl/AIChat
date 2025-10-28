@@ -5,6 +5,11 @@ using AIChat.Infrastructure.Configuration;
 using AIChat.Infrastructure.Storage;
 using AIChat.WebApi.Services;
 using AIChat.WebApi.Hubs;
+using AIChat.Safety.Services;
+using AIChat.Safety.Providers;
+using AIChat.Safety.Contracts;
+using AIChat.Safety.Options;
+using AIChat.Safety.DependencyInjection;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
@@ -21,6 +26,10 @@ if (builder.Environment.IsDevelopment())
 {
     builder.Configuration.AddUserSecrets<Program>();
 }
+
+// Add OpenAI configuration section for API key
+// The API key should be stored in user secrets with the key "OpenAI:ApiKey"
+// Example: dotnet user-secrets set "OpenAI:ApiKey" "your-api-key-here"
 
 // Manual configuration loading (same approach as unit tests)
 var providersSection = builder.Configuration.GetSection("Providers");
@@ -80,6 +89,13 @@ builder.Configuration.GetSection("Storage").Bind(storageConfig);
 builder.Services.AddSingleton(storageConfig);
 
 // ============================================================
+// SAFETY CONFIGURATION
+// ============================================================
+
+// Add AIChat safety services
+builder.Services.AddAISafetyServices(builder.Configuration);
+
+// ============================================================
 // INFRASTRUCTURE SERVICES
 // ============================================================
 
@@ -94,6 +110,11 @@ builder.Services.AddSingleton<ProviderClientFactory>();
 
 // Agent helper service
 builder.Services.AddSingleton<AgentService>();
+
+// ============================================================
+// SAFETY SERVICES
+// ============================================================
+// Safety services are already registered via AddAISafetyServices()
 
 // ============================================================
 // AGENT REGISTRATION
@@ -169,6 +190,7 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.AddSource("Microsoft.Extensions.AI")
                .AddSource("Microsoft.Agents.AI")
+               .AddSource("AIChat.Safety") // Add safety activity source
                .AddSource("agent-telemetry-source"); // For custom agent telemetry
         
         // Add ASP.NET Core instrumentation
@@ -205,7 +227,8 @@ builder.Services.AddOpenTelemetry()
         metrics.AddAspNetCoreInstrumentation()
                .AddHttpClientInstrumentation()
                .AddMeter("Microsoft.Extensions.AI")
-               .AddMeter("Microsoft.Agents.AI");
+               .AddMeter("Microsoft.Agents.AI")
+               .AddMeter("AIChat.Safety"); // Add safety metrics
         
         // Configure metric exporters
         if (builder.Environment.IsDevelopment())

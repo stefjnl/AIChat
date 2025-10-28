@@ -22,7 +22,7 @@ public class MetricsCollector
         _lastTotalDuration = 0;
     }
 
-    public async Task<ApplicationMetrics> CollectMetrics()
+    public ApplicationMetrics CollectMetrics()
     {
         try
         {

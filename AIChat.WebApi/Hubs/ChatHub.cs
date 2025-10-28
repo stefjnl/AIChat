@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using AIChat.Infrastructure.Storage;
 using AIChat.Infrastructure.Models;
 using AIChat.Shared.Models;
+using AIChat.Safety.Middleware;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Linq;
@@ -11,7 +12,8 @@ using System.Linq;
 namespace AIChat.WebApi.Hubs;
 
 /// <summary>
-/// SignalR hub for real-time chat communication
+/// SignalR hub for real-time chat communication.
+/// Safety evaluation is automatically handled by the SafetyChatClientMiddleware.
 /// </summary>
 public class ChatHub : Hub
 {
@@ -20,20 +22,28 @@ public class ChatHub : Hub
     private readonly IChatHistoryStorage _chatHistoryStorage;
     private readonly ILogger<ChatHub> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the ChatHub class.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider for resolving dependencies.</param>
+    /// <param name="threadStorage">The thread storage service.</param>
+    /// <param name="chatHistoryStorage">The chat history storage service.</param>
+    /// <param name="logger">The logger instance.</param>
     public ChatHub(
         IServiceProvider serviceProvider,
         IThreadStorage threadStorage,
         IChatHistoryStorage chatHistoryStorage,
-        ILogger<ChatHub> logger)
+      ILogger<ChatHub> logger)
     {
-        _serviceProvider = serviceProvider;
-        _threadStorage = threadStorage;
-        _chatHistoryStorage = chatHistoryStorage;
-        _logger = logger;
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+    _threadStorage = threadStorage ?? throw new ArgumentNullException(nameof(threadStorage));
+        _chatHistoryStorage = chatHistoryStorage ?? throw new ArgumentNullException(nameof(chatHistoryStorage));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Stream chat responses from the selected provider
+    /// Stream chat responses from the selected provider.
+    /// Safety evaluation is automatically performed by the middleware.
     /// </summary>
     /// <param name="provider">Provider name (OpenRouter, NanoGPT, LMStudio)</param>
     /// <param name="message">User message</param>
@@ -41,185 +51,270 @@ public class ChatHub : Hub
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of ChatChunk objects</returns>
     public async IAsyncEnumerable<ChatChunk> StreamChat(
-        string provider,
+    string provider,
         string message,
         string? threadId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "StreamChat started - Provider: {Provider}, ThreadId: {ThreadId}, ConnectionId: {ConnectionId}",
-            provider, threadId ?? "new", Context.ConnectionId);
+     "StreamChat started - Provider: {Provider}, ThreadId: {ThreadId}, ConnectionId: {ConnectionId}",
+          provider, threadId ?? "new", Context.ConnectionId);
 
         // Validate input
         if (string.IsNullOrWhiteSpace(provider))
         {
             yield return new ChatChunk
-            {
-                Text = null,
-                IsFinal = true,
-                Error = "Provider name is required"
-            };
-            yield break;
+     {
+         Text = null,
+          IsFinal = true,
+ Error = "Provider name is required"
+    };
+   yield break;
         }
 
-        if (string.IsNullOrWhiteSpace(message))
-        {
+ if (string.IsNullOrWhiteSpace(message))
+   {
             yield return new ChatChunk
-            {
-                Text = null,
-                IsFinal = true,
+   {
+      Text = null,
+      IsFinal = true,
                 Error = "Message is required"
-            };
-            yield break;
+      };
+   yield break;
         }
-
-        AgentThread? thread = null;
-        AIAgent? agent = null;
-        UsageDetails? usage = null;
 
         // Resolve agent
-        AIAgent? resolvedAgent = null;
-        string? agentError = null;
+        AIAgent? agent = null;
+     string? agentError = null;
         
         try
         {
-            resolvedAgent = _serviceProvider.GetRequiredKeyedService<AIAgent>(provider);
-        }
+         agent = _serviceProvider.GetRequiredKeyedService<AIAgent>(provider);
+   }
         catch (InvalidOperationException)
         {
-            _logger.LogWarning("Provider not found: {Provider}", provider);
-            agentError = $"Provider '{provider}' not found";
+  _logger.LogWarning("Provider not found: {Provider}", provider);
+      agentError = $"Provider '{provider}' not found";
         }
 
-        if (agentError != null)
+        if (agentError != null || agent == null)
         {
-            yield return new ChatChunk
+ yield return new ChatChunk
             {
-                Text = null,
+    Text = null,
                 IsFinal = true,
-                Error = agentError
-            };
-            yield break;
+       Error = agentError ?? "Unknown error"
+          };
+  yield break;
         }
-
-        agent = resolvedAgent!;
 
         // Load or create thread with conversation history
-        threadId ??= _threadStorage.CreateNewThreadId();
-        var (loadedThread, conversationHistory) = await LoadOrCreateThreadWithHistoryAsync(agent, threadId, cancellationToken);
+    threadId ??= _threadStorage.CreateNewThreadId();
+    var (thread, conversationHistory) = await LoadOrCreateThreadWithHistoryAsync(agent, threadId, cancellationToken);
 
-        thread = loadedThread;
-        _logger.LogDebug("Using thread: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
+   _logger.LogDebug("Using thread: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
 
-        // Add the new user message to conversation history
+// Add the new user message to conversation history
         var userMessage = new ChatMessage(ChatRole.User, message);
-        var userTimestamp = DateTime.UtcNow;
-        conversationHistory.Add(userMessage);
+    var userTimestamp = DateTime.UtcNow;
+ conversationHistory.Add(userMessage);
 
-        // Track timestamp for the new user message
+  // Track timestamp for the new user message
         var newMessageTimestamps = new Dictionary<int, DateTime>
-        {
-            { conversationHistory.Count - 1, userTimestamp }
-        };
+{
+    { conversationHistory.Count - 1, userTimestamp }
+ };
 
-        // Stream response from agent using full conversation history
-        string fullResponse = "";
+  // Stream the chat interaction with automatic safety handling
+  await foreach (var chunk in StreamChatInteractionAsync(agent, thread, threadId, conversationHistory, newMessageTimestamps, cancellationToken))
+        {
+       yield return chunk;
+   }
+    }
+
+    /// <summary>
+    /// Internal method to handle the streaming chat interaction with safety exception handling.
+    /// </summary>
+    private async IAsyncEnumerable<ChatChunk> StreamChatInteractionAsync(
+        AIAgent agent,
+     AgentThread thread,
+        string threadId,
+    List<ChatMessage> conversationHistory,
+        Dictionary<int, DateTime> newMessageTimestamps,
+[EnumeratorCancellation] CancellationToken cancellationToken)
+ {
+    string fullResponse = "";
+        UsageDetails? usage = null;
+  bool streamingCompleted = false;
+        SafetyViolationException? safetyViolation = null;
+     Exception? generalException = null;
+
+  // Stream responses - safety is automatically handled by middleware
+        var enumerator = agent.RunStreamingAsync(conversationHistory.ToArray()).GetAsyncEnumerator(cancellationToken);
         
-        await foreach (var update in agent.RunStreamingAsync(conversationHistory.ToArray()))
-        {
-            // Check for usage information
-            var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
-            if (usageContent != null)
-            {
-                usage = usageContent.Details;
-                _logger.LogDebug(
-                    "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
-                    usage.InputTokenCount,
-                    usage.OutputTokenCount,
-                    usage.TotalTokenCount);
-            }
-
-            // Yield text chunks immediately for true streaming
-            if (!string.IsNullOrEmpty(update.Text))
-            {
-                fullResponse += update.Text;
-                yield return new ChatChunk
-                {
-                    Text = update.Text,
-                    IsFinal = false,
-                    ThreadId = threadId
-                };
-            }
-        }
-
-        // Add the assistant's response to conversation history
-        if (!string.IsNullOrWhiteSpace(fullResponse))
-        {
-            var assistantMessage = new ChatMessage(ChatRole.Assistant, fullResponse);
-            var assistantTimestamp = DateTime.UtcNow;
-            conversationHistory.Add(assistantMessage);
-            newMessageTimestamps[conversationHistory.Count - 1] = assistantTimestamp;
-        }
-
-        // Save thread with updated conversation history
         try
+   {
+    while (true)
         {
-            await SaveThreadWithHistoryAsync(agent, thread, threadId, conversationHistory, newMessageTimestamps, cancellationToken);
-            
-            // Update chat history metadata and notify clients
-            await UpdateChatHistoryAsync(threadId, cancellationToken);
+ try
+   {
+       if (!await enumerator.MoveNextAsync())
+   {
+  streamingCompleted = true;
+    break;
+ }
+    }
+    catch (SafetyViolationException ex)
+  {
+    safetyViolation = ex;
+  break;
+    }
+   catch (Exception ex)
+    {
+     generalException = ex;
+      break;
+         }
+
+    var update = enumerator.Current;
+
+   // Check for usage information
+ var usageContent = update.Contents?.OfType<UsageContent>().FirstOrDefault();
+  if (usageContent != null)
+      {
+    usage = usageContent.Details;
+        _logger.LogDebug(
+         "Token usage - Input: {Input}, Output: {Output}, Total: {Total}",
+    usage.InputTokenCount,
+     usage.OutputTokenCount,
+        usage.TotalTokenCount);
+    }
+
+      // Stream text updates
+   if (!string.IsNullOrEmpty(update.Text))
+     {
+      fullResponse += update.Text;
+yield return new ChatChunk
+    {
+      Text = update.Text,
+    IsFinal = false,
+    ThreadId = threadId
+ };
+         }
+      }
         }
-        catch (Exception ex)
+   finally
         {
-            _logger.LogError(ex, "Failed to save thread or update chat history: {ThreadId}", threadId);
+   await enumerator.DisposeAsync();
         }
+
+    if (streamingCompleted)
+   {
+  _logger.LogDebug("Streaming completed. Final response length: {ResponseLength}", fullResponse.Length);
+        }
+
+ // Handle safety violations
+        if (safetyViolation != null)
+        {
+     _logger.LogWarning(
+      "Safety violation in chat stream. Type: {ViolationType}, Categories: {Categories}, RiskScore: {RiskScore}",
+    safetyViolation.ViolationType,
+ safetyViolation.EvaluationResult.DetectedCategories.Select(c => c.Category),
+    safetyViolation.EvaluationResult.RiskScore);
+
+    var errorMessage = safetyViolation.ViolationType == SafetyViolationType.UserInput
+      ? "Your message has been blocked due to safety policy violations."
+     : "The AI response has been blocked due to safety policy violations.";
+
+     yield return new ChatChunk
+     {
+           Text = errorMessage,
+      IsFinal = true,
+       Error = safetyViolation.Message
+     };
+            yield break;
+     }
+
+ // Handle general exceptions
+        if (generalException != null)
+        {
+     _logger.LogError(generalException, "Error during chat streaming");
+     yield return new ChatChunk
+     {
+      Text = "An error occurred during the conversation.",
+    IsFinal = true,
+    Error = generalException.Message
+ };
+      yield break;
+        }
+
+   // Add the assistant's response to conversation history
+ if (!string.IsNullOrWhiteSpace(fullResponse))
+     {
+   var assistantMessage = new ChatMessage(ChatRole.Assistant, fullResponse);
+       var assistantTimestamp = DateTime.UtcNow;
+     conversationHistory.Add(assistantMessage);
+       newMessageTimestamps[conversationHistory.Count - 1] = assistantTimestamp;
+ }
+
+ // Save thread with updated conversation history
+try
+{
+     await SaveThreadWithHistoryAsync(agent, thread, threadId, conversationHistory, newMessageTimestamps, cancellationToken);
+
+       // Update chat history metadata and notify clients
+   await UpdateChatHistoryAsync(threadId, cancellationToken);
+  }
+   catch (Exception ex)
+        {
+      _logger.LogError(ex, "Failed to save thread or update chat history: {ThreadId}", threadId);
+ }
 
         // Send final chunk with usage and thread ID
         yield return new ChatChunk
         {
-            Text = null,
-            IsFinal = true,
-            ThreadId = threadId,
-            Usage = usage != null ? new TokenUsage
-            {
-                InputTokens = (int)(usage.InputTokenCount ?? 0),
-                OutputTokens = (int)(usage.OutputTokenCount ?? 0),
-                TotalTokens = (int)(usage.TotalTokenCount ?? 0)
-            } : null
+          Text = null,
+      IsFinal = true,
+     ThreadId = threadId,
+     Usage = usage != null ? new TokenUsage
+  {
+      InputTokens = (int)(usage.InputTokenCount ?? 0),
+   OutputTokens = (int)(usage.OutputTokenCount ?? 0),
+    TotalTokens = (int)(usage.TotalTokenCount ?? 0)
+     } : null
         };
 
-        _logger.LogInformation(
-            "StreamChat completed successfully - Provider: {Provider}, ThreadId: {ThreadId}",
-            provider, threadId);
+ _logger.LogInformation(
+"StreamChat completed successfully - ThreadId: {ThreadId}",
+    threadId);
     }
 
     /// <summary>
     /// Load existing thread with conversation history or create new one
     /// </summary>
     private async Task<(AgentThread thread, List<ChatMessage> conversationHistory)> LoadOrCreateThreadWithHistoryAsync(
-        AIAgent agent,
+  AIAgent agent,
         string threadId,
-        CancellationToken cancellationToken)
+ CancellationToken cancellationToken)
     {
         try
         {
             var threadData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
 
-            if (threadData.HasValue)
-            {
-                _logger.LogDebug("Loading existing thread: {ThreadId}", threadId);
+          if (threadData.HasValue)
+     {
+     _logger.LogDebug("Loading existing thread: {ThreadId}", threadId);
+       
+    // Load conversation history from thread data
+     var conversationHistory = LoadConversationHistory(threadData.Value);
                 
-                // Load conversation history from thread data
-                var conversationHistory = LoadConversationHistory(threadData.Value);
-                
-                // Create a new thread since AgentThread doesn't expose messages directly
-                return (agent.GetNewThread(), conversationHistory);
-            }
+     // Create a new thread since AgentThread doesn't expose messages directly
+         return (agent.GetNewThread(), conversationHistory);
+         }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to load thread {ThreadId}, creating new one", threadId);
-        }
+  _logger.LogWarning(ex, "Failed to load thread {ThreadId}, creating new one", threadId);
+     }
 
         _logger.LogDebug("Creating new thread: {ThreadId}", threadId);
         return (agent.GetNewThread(), new List<ChatMessage>());
@@ -233,42 +328,42 @@ public class ChatHub : Hub
         var messages = new List<ChatMessage>();
         
         try
-        {
+      {
             if (threadData.TryGetProperty("messages", out var messagesProperty) && 
-                messagesProperty.ValueKind == JsonValueKind.Array)
-            {
+    messagesProperty.ValueKind == JsonValueKind.Array)
+         {
                 foreach (var msg in messagesProperty.EnumerateArray())
-                {
-                    if (msg.TryGetProperty("role", out var roleProperty) &&
-                        msg.TryGetProperty("content", out var contentProperty) &&
-                        roleProperty.ValueKind == JsonValueKind.String &&
-                        contentProperty.ValueKind == JsonValueKind.String)
-                    {
-                        var role = roleProperty.GetString();
-                        var content = contentProperty.GetString();
-                        
-                        if (!string.IsNullOrEmpty(role) && !string.IsNullOrEmpty(content))
-                        {
-                            var chatRole = role.ToLowerInvariant() switch
-                            {
-                                "user" => ChatRole.User,
-                                "assistant" => ChatRole.Assistant,
-                                "system" => ChatRole.System,
-                                _ => ChatRole.User
-                            };
-                            
-                            messages.Add(new ChatMessage(chatRole, content));
-                        }
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error loading conversation history from thread data");
-        }
+    {
+            if (msg.TryGetProperty("role", out var roleProperty) &&
+    msg.TryGetProperty("content", out var contentProperty) &&
+     roleProperty.ValueKind == JsonValueKind.String &&
+         contentProperty.ValueKind == JsonValueKind.String)
+            {
+       var role = roleProperty.GetString();
+            var content = contentProperty.GetString();
         
-        return messages;
+            if (!string.IsNullOrEmpty(role) && !string.IsNullOrEmpty(content))
+     {
+     var chatRole = role.ToLowerInvariant() switch
+       {
+      "user" => ChatRole.User,
+                 "assistant" => ChatRole.Assistant,
+           "system" => ChatRole.System,
+              _ => ChatRole.User
+        };
+    
+    messages.Add(new ChatMessage(chatRole, content));
+    }
+  }
+          }
+            }
+   }
+   catch (Exception ex)
+        {
+        _logger.LogWarning(ex, "Error loading conversation history from thread data");
+ }
+        
+  return messages;
     }
 
     /// <summary>
@@ -276,90 +371,90 @@ public class ChatHub : Hub
     /// </summary>
     private async Task SaveThreadWithHistoryAsync(
         AIAgent agent,
-        AgentThread thread,
-        string threadId,
-        List<ChatMessage> conversationHistory,
-        Dictionary<int, DateTime> newMessageTimestamps,
+  AgentThread thread,
+      string threadId,
+  List<ChatMessage> conversationHistory,
+    Dictionary<int, DateTime> newMessageTimestamps,
         CancellationToken cancellationToken)
     {
         try
         {
             // Load existing thread data to preserve timestamps
-            var existingData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
-            var existingTimestamps = new Dictionary<int, DateTime>();
-            
-            if (existingData.HasValue && existingData.Value.TryGetProperty("messages", out var existingMessages))
+       var existingData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
+ var existingTimestamps = new Dictionary<int, DateTime>();
+  
+       if (existingData.HasValue && existingData.Value.TryGetProperty("messages", out var existingMessages))
             {
-                var index = 0;
-                foreach (var msg in existingMessages.EnumerateArray())
-                {
-                    if (msg.TryGetProperty("timestamp", out var timestampProperty) && 
-                        timestampProperty.ValueKind == JsonValueKind.String &&
-                        DateTime.TryParse(timestampProperty.GetString(), out var timestamp))
-                    {
-                        existingTimestamps[index] = timestamp;
-                    }
-                    index++;
-                }
-            }
+             var index = 0;
+     foreach (var msg in existingMessages.EnumerateArray())
+      {
+      if (msg.TryGetProperty("timestamp", out var timestampProperty) && 
+   timestampProperty.ValueKind == JsonValueKind.String &&
+             DateTime.TryParse(timestampProperty.GetString(), out var timestamp))
+       {
+     existingTimestamps[index] = timestamp;
+         }
+       index++;
+     }
+     }
 
             // Create thread data structure with conversation history
-            var now = DateTime.UtcNow;
-            var threadData = new
-            {
-                threadId = threadId,
-                created = DateTime.UtcNow,
-                provider = agent.Name,
+        var now = DateTime.UtcNow;
+   var threadData = new
+        {
+        threadId = threadId,
+        created = DateTime.UtcNow,
+      provider = agent.Name,
                 messages = conversationHistory.Select((msg, index) => new
-                {
-                    role = msg.Role.ToString().ToLowerInvariant(),
-                    content = msg.Text,
-                    timestamp = existingTimestamps.TryGetValue(index, out var existingTimestamp) 
-                        ? existingTimestamp 
-                        : newMessageTimestamps.TryGetValue(index, out var newTimestamp)
-                            ? newTimestamp
-                            : now
-                }).ToArray()
-            };
+       {
+         role = msg.Role.ToString().ToLowerInvariant(),
+          content = msg.Text,
+          timestamp = existingTimestamps.TryGetValue(index, out var existingTimestamp) 
+      ? existingTimestamp 
+   : newMessageTimestamps.TryGetValue(index, out var newTimestamp)
+        ? newTimestamp
+    : now
+    }).ToArray()
+    };
 
-            var json = System.Text.Json.JsonSerializer.Serialize(threadData);
-            var jsonElement = System.Text.Json.JsonDocument.Parse(json).RootElement;
+    var json = System.Text.Json.JsonSerializer.Serialize(threadData);
+       var jsonElement = System.Text.Json.JsonDocument.Parse(json).RootElement;
             
             await _threadStorage.SaveThreadAsync(threadId, jsonElement, cancellationToken);
-            _logger.LogDebug("Thread saved successfully: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
+  _logger.LogDebug("Thread saved successfully: {ThreadId} with {MessageCount} messages", threadId, conversationHistory.Count);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to save thread: {ThreadId}", threadId);
-            // Don't throw - we don't want to fail the response if save fails
+    catch (Exception ex)
+    {
+   _logger.LogError(ex, "Failed to save thread: {ThreadId}", threadId);
+     // Don't throw - we don't want to fail the response if save fails
         }
     }
 
     /// <summary>
     /// Update chat history and notify all connected clients
-    /// </summary>
+/// </summary>
     private async Task UpdateChatHistoryAsync(string threadId, CancellationToken cancellationToken)
     {
         try
         {
-            // Update thread metadata in chat history
+     // Update thread metadata in chat history
             var threadData = await _threadStorage.LoadThreadAsync(threadId, cancellationToken);
-            if (threadData.HasValue)
+   if (threadData.HasValue)
             {
                 await _chatHistoryStorage.UpdateThreadMetadataAsync(threadId, threadData.Value, cancellationToken);
             }
-            
-            // Notify all connected clients about the chat history update
-            var historyItem = await _chatHistoryStorage.GetChatHistoryItemAsync(threadId, cancellationToken);
-            if (historyItem != null)
-            {
+      
+          // Notify all connected clients about the chat history update
+ var historyItem = await _chatHistoryStorage.GetChatHistoryItemAsync(threadId, cancellationToken);
+   if (historyItem != null)
+      {
                 await Clients.All.SendAsync("ChatHistoryUpdated", historyItem, cancellationToken);
-            }
-        }
-        catch (Exception ex)
-        {
+}
+     }
+   catch (Exception ex)
+    {
             _logger.LogError(ex, "Error updating chat history for thread: {ThreadId}", threadId);
-        }
+   }
     }
 
     /// <summary>
@@ -374,25 +469,25 @@ public class ChatHub : Hub
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving chat history for client: {ConnectionId}", Context.ConnectionId);
-            return new List<AIChat.Infrastructure.Models.ChatHistoryItem>();
-        }
+     return new List<AIChat.Infrastructure.Models.ChatHistoryItem>();
+  }
     }
 
-    /// <summary>
+  /// <summary>
     /// Set active thread for the connected client
     /// </summary>
     public async Task<bool> SetActiveThread(string threadId)
     {
-        try
+ try
         {
             await _chatHistoryStorage.SetActiveThreadAsync(threadId);
-            await Clients.All.SendAsync("ActiveThreadChanged", threadId);
-            return true;
+   await Clients.All.SendAsync("ActiveThreadChanged", threadId);
+         return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error setting active thread: {ThreadId}", threadId);
-            return false;
+      return false;
         }
     }
 
@@ -401,20 +496,20 @@ public class ChatHub : Hub
     /// </summary>
     public async Task<bool> DeleteChatHistoryItem(string threadId)
     {
-        try
+   try
         {
-            var success = await _chatHistoryStorage.DeleteChatHistoryItemAsync(threadId);
-            if (success)
+      var success = await _chatHistoryStorage.DeleteChatHistoryItemAsync(threadId);
+     if (success)
             {
-                await Clients.All.SendAsync("ChatHistoryItemDeleted", threadId);
-            }
+    await Clients.All.SendAsync("ChatHistoryItemDeleted", threadId);
+  }
             return success;
         }
         catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error deleting chat history item: {ThreadId}", threadId);
+  {
+       _logger.LogError(ex, "Error deleting chat history item: {ThreadId}", threadId);
             return false;
-        }
+   }
     }
 
     /// <summary>
@@ -422,7 +517,7 @@ public class ChatHub : Hub
     /// </summary>
     public override async Task OnConnectedAsync()
     {
-        _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
+    _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
         await base.OnConnectedAsync();
     }
 
@@ -434,12 +529,12 @@ public class ChatHub : Hub
         if (exception != null)
         {
             _logger.LogWarning(exception,
-                "Client disconnected with error: {ConnectionId}",
-                Context.ConnectionId);
-        }
+    "Client disconnected with error: {ConnectionId}",
+      Context.ConnectionId);
+    }
         else
-        {
-            _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
+   {
+          _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
         }
 
         await base.OnDisconnectedAsync(exception);

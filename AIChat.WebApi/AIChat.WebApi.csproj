@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="9.5.2" />
-    <PackageReference Include="Azure.Identity" Version="1.10.0" />
+    <PackageReference Include="Azure.Identity" Version="1.11.4" />
     <PackageReference Include="Azure.Monitor.Query" Version="1.2.0" />
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251016.1" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting" Version="1.0.0-preview.251016.1" />
@@ -31,6 +31,7 @@
     <ProjectReference Include="..\AIChat.Agents\AIChat.Agents.csproj" />
     <ProjectReference Include="..\AIChat.Infrastructure\AIChat.Infrastructure.csproj" />
     <ProjectReference Include="..\AIChat.Shared\AIChat.Shared.csproj" />
+    <ProjectReference Include="..\AIChat.Safety\AIChat.Safety.csproj" />
   </ItemGroup>
 
 
