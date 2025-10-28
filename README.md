@@ -25,7 +25,8 @@ AIChat/
 ├── AIChat.Safety/          # Responsible AI safety evaluation system
 ├── AIChat.WebApi/          # Web API and SignalR hub
 ├── AIChat.AppHost/         # Application hosting (Aspire)
-└── AIChat.Agents.Tests/    # Comprehensive test suite
+├── AIChat.Agents.Tests/    # AI provider integration tests
+└── AIChat.Safety.Tests/    # Safety system comprehensive tests
 ```
 
 ## 🛠️ Technology Stack
@@ -36,6 +37,9 @@ AIChat/
 - **SignalR**: Real-time bidirectional communication
 - **Tailwind CSS**: Modern, responsive UI framework
 - **Entity Framework Core**: Data access (ready for expansion)
+- **OpenAI Moderation API**: Content safety evaluation and moderation
+- **OpenTelemetry**: Distributed tracing and metrics
+- **Polly**: Resilience and transient-fault handling
 - **xUnit**: Testing framework
 - **Docker**: Containerization support
 
@@ -143,6 +147,26 @@ The project includes comprehensive integration tests that verify:
 - Multi-message conversation handling
 - Error handling for unknown providers
 - Token usage tracking
+- **Safety system functionality and content moderation**
+
+### Safety System Testing
+The AIChat.Safety project includes extensive test coverage:
+
+```bash
+# Run all safety tests
+dotnet test AIChat.Safety.Tests/
+
+# Run specific safety test categories
+dotnet test AIChat.Safety.Tests/ --filter Category=Unit
+dotnet test AIChat.Safety.Tests/ --filter Category=Integration
+```
+
+Safety tests cover:
+- OpenAI Moderation API integration
+- Streaming safety evaluation
+- Configuration validation
+- Fallback behavior testing
+- Performance and timeout handling
 
 Run the test harness separately:
 
@@ -166,6 +190,9 @@ dotnet run --project AIChat.Agents
 - [`ChatHub.cs`](AIChat.WebApi/Hubs/ChatHub.cs): SignalR hub for real-time chat
 - [`ThreadsController.cs`](AIChat.WebApi/Controllers/ThreadsController.cs): REST API for conversation management
 - [`index.html`](AIChat.WebApi/wwwroot/index.html): Modern chat interface
+- [`SafetyEvaluationService.cs`](AIChat.Safety/Services/SafetyEvaluationService.cs): Main safety evaluation orchestration
+- [`OpenAIModerationEvaluator.cs`](AIChat.Safety/Providers/OpenAIModerationEvaluator.cs): OpenAI Moderation API integration
+- [`SafetyServiceCollectionExtensions.cs`](AIChat.Safety/DependencyInjection/SafetyServiceCollectionExtensions.cs): Safety service registration
 
 ## 🔌 Provider Integration
 
@@ -235,20 +262,30 @@ docker run -p 5001:80 aichat
 
 ## 🛡️ Responsible AI
 
-AIChat includes a comprehensive Responsible AI safety system that helps ensure safe and appropriate interactions. The system provides:
+AIChat includes a comprehensive Responsible AI safety system that helps ensure safe and appropriate interactions. The system has been migrated from Azure Content Safety to OpenAI Moderation API for improved performance and cost-effectiveness.
 
 ### Safety Evaluation Features
-- **Real-time Content Moderation**: Uses OpenAI's Moderation API to detect harmful content
-- **Streaming Safety Analysis**: Evaluates AI responses in real-time as they're generated
-- **Configurable Policies**: Separate policies for user input and AI output with customizable thresholds
-- **Harm Category Detection**: Identifies hate speech, self-harm, sexual content, and violence
-- **Fallback Mechanisms**: Graceful degradation when safety services are unavailable
+- **Real-time Content Moderation**: Uses OpenAI's latest omni-moderation-latest model for comprehensive content analysis
+- **Streaming Safety Analysis**: Evaluates AI responses in real-time as they're generated with configurable evaluation strategies
+- **Configurable Policies**: Separate policies for user input and AI output with customizable thresholds and risk scores
+- **Harm Category Detection**: Identifies hate speech, harassment, self-harm, sexual content, and violence with detailed severity scoring
+- **Fallback Mechanisms**: Graceful degradation with configurable fail-open or fail-closed behavior when safety services are unavailable
+- **Resilience & Performance**: Built-in retry policies, circuit breakers, and timeout handling for reliable operation
 
 ### Key Components
-- **[`SafetyEvaluationService`](AIChat.Safety/Services/SafetyEvaluationService.cs)**: Main service coordinating safety evaluations
-- **[`OpenAIModerationEvaluator`](AIChat.Safety/Providers/OpenAIModerationEvaluator.cs)**: OpenAI Moderation API integration
-- **[`Streaming Safety Evaluator`](AIChat.Safety/Providers/OpenAIStreamingSafetyEvaluator.cs)**: Real-time content analysis
-- **Comprehensive Configuration**: Detailed settings for thresholds, policies, and resilience
+- **[`SafetyEvaluationService`](AIChat.Safety/Services/SafetyEvaluationService.cs)**: Main orchestration service providing high-level safety operations
+- **[`OpenAIModerationEvaluator`](AIChat.Safety/Providers/OpenAIModerationEvaluator.cs)**: OpenAI Moderation API integration with support for latest model formats
+- **[`OpenAIStreamingSafetyEvaluator`](AIChat.Safety/Providers/OpenAIStreamingSafetyEvaluator.cs)**: Real-time streaming content analysis with multiple evaluation strategies
+- **[`SafetyChatClientMiddleware`](AIChat.Safety/Middleware/SafetyChatClientMiddleware.cs)**: AI client middleware for automatic safety integration
+- **[`SafetyOptions`](AIChat.Safety/Options/SafetyOptions.cs)**: Comprehensive configuration system with resilience, audit, and filtering settings
+
+### Migration from Azure Content Safety
+The safety system has been successfully migrated from Azure Content Safety to OpenAI Moderation API, providing:
+- **Cost-Effective**: More affordable pricing model compared to Azure Content Safety
+- **Better Performance**: HTTP-based implementation with proper async/await patterns
+- **Enhanced Categories**: Support for additional harm categories including harassment
+- **Backward Compatibility**: All existing interfaces and contracts remain unchanged
+- **Improved Scoring**: More granular severity levels (0-7) based on OpenAI's confidence scores
 
 ### Safety Configuration
 The safety system is configured through the `Safety` section in [`appsettings.json`](AIChat.WebApi/appsettings.json):
@@ -257,31 +294,83 @@ The safety system is configured through the `Safety` section in [`appsettings.js
 {
   "Safety": {
     "Enabled": true,
+    "Endpoint": "https://api.openai.com/v1/moderations",
+    "ApiKey": "",
+    "OrganizationId": "",
+    "Model": "omni-moderation-latest",
     "FallbackBehavior": "FailOpen",
     "InputPolicy": {
       "Thresholds": {
         "Hate": 4,
+        "Harassment": 4,
         "SelfHarm": 6,
         "Sexual": 4,
         "Violence": 2
-      }
+      },
+      "BlockOnViolation": true,
+      "MaxRiskScore": 70
     },
     "OutputPolicy": {
       "Thresholds": {
         "Hate": 2,
+        "Harassment": 2,
         "SelfHarm": 4,
         "Sexual": 2,
         "Violence": 2
-      }
+      },
+      "BlockOnViolation": true,
+      "MaxRiskScore": 50
+    },
+    "Resilience": {
+      "TimeoutInMilliseconds": 5000,
+      "MaxRetries": 2,
+      "CircuitBreakerThreshold": 5,
+      "CircuitBreakerDurationInSeconds": 30,
+      "UseExponentialBackoff": true
+    },
+    "Audit": {
+      "Enabled": true,
+      "LogFullContent": false,
+      "LogContentHashes": true,
+      "LogMetadata": true,
+      "RetentionPeriodInDays": 90
     }
   }
 }
 ```
 
-### Integration Points
-- **Chat Pipeline**: Automatic evaluation of user input and AI responses
-- **SignalR Streaming**: Real-time safety checks during streaming responses
-- **Audit Logging**: Comprehensive logging of safety violations and system events
-- **Health Monitoring**: Built-in health checks for safety service availability
+### API Key Configuration
+Store your OpenAI API key securely using .NET User Secrets:
 
-For detailed implementation information, see [RESPONSIBLE_AI.md](RESPONSIBLE_AI.md) and [RAI-Architecture.md](RAI-Architecture.md).
+```bash
+# For OpenAI Moderation API
+dotnet user-secrets set "OpenAI:ApiKey" "your-openai-api-key"
+
+# Alternative configuration paths
+dotnet user-secrets set "Safety:ApiKey" "your-openai-api-key"
+dotnet user-secrets set "Safety:OpenAI:ApiKey" "your-openai-api-key"
+```
+
+The system will look for the API key in the following order:
+1. `Safety:ApiKey` configuration
+2. `Safety:OpenAI:ApiKey` configuration
+3. `OpenAI:ApiKey` configuration
+4. `OPENAI_API_KEY` environment variable
+
+### Integration Points
+- **Chat Pipeline**: Automatic evaluation of user input and AI responses with configurable policies
+- **SignalR Streaming**: Real-time safety checks during streaming responses with buffering strategies
+- **Audit Logging**: Comprehensive logging of safety violations with content hashes and metadata
+- **Health Monitoring**: Built-in health checks for safety service availability and performance
+- **OpenTelemetry Integration**: Distributed tracing and metrics for safety operations
+- **Dependency Injection**: Seamless integration with .NET's DI container
+
+### Testing & Quality Assurance
+The safety system includes comprehensive test coverage:
+- **Unit Tests**: Individual component testing with mocked dependencies
+- **Integration Tests**: End-to-end testing with real API calls
+- **Configuration Tests**: Validation of configuration binding and options
+- **Performance Tests**: Load testing and timeout validation
+- **Mock Providers**: Test implementations for development scenarios
+
+For detailed implementation information, see [RESPONSIBLE_AI.md](RESPONSIBLE_AI.md), [RAI-Architecture.md](RAI-Architecture.md), and [AIChat.Safety/OPENAI_MIGRATION_SUMMARY.md](AIChat.Safety/OPENAI_MIGRATION_SUMMARY.md).
