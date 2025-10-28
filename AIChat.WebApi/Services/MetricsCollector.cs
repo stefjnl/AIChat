@@ -22,7 +22,7 @@ public class MetricsCollector
         _lastTotalDuration = 0;
     }
 
-    public Task<ApplicationMetrics> CollectMetrics()
+    public ApplicationMetrics CollectMetrics()
     {
         try
         {
@@ -60,7 +60,7 @@ public class MetricsCollector
             _lastErrorCount = errorCount;
             _lastTotalDuration = totalDuration;
 
-            return Task.FromResult(new ApplicationMetrics
+            return new ApplicationMetrics
             {
                 RequestRate = Math.Round((double)requestRate, 1),
                 RequestRateTrend = requestRate > 25 ? "up" : requestRate < 25 ? "down" : "stable",
@@ -79,14 +79,14 @@ public class MetricsCollector
                 MemoryUsed = Math.Round(memoryUsage / 1024 / 1024, 1),
                 MemoryTotal = 4.0, // Assume 4GB total
                 MemoryPercentage = Math.Round((double)(memoryUsage / (4.0 * 1024 * 1024 * 1024)) * 100, 0, MidpointRounding.AwayFromZero)
-            });
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error collecting application metrics");
 
             // Return fallback metrics
-            return Task.FromResult(new ApplicationMetrics
+            return new ApplicationMetrics
             {
                 RequestRate = 25.0,
                 RequestRateTrend = "stable",
@@ -102,7 +102,7 @@ public class MetricsCollector
                 MemoryUsed = 2.8,
                 MemoryTotal = 4.0,
                 MemoryPercentage = 70
-            });
+            };
         }
     }
 

@@ -83,12 +83,12 @@ public class TelemetryService
         return await GetApplicationMetrics();
     }
 
-    private async Task<object> GetApplicationMetrics()
+    private Task<object> GetApplicationMetrics()
     {
         // Collect metrics from the application's custom meters and system
-        var metrics = await _metricsCollector.CollectMetrics();
+        var metrics = _metricsCollector.CollectMetrics();
 
-        return new
+        var result = new
         {
             requestRate = new
             {
@@ -126,6 +126,8 @@ public class TelemetryService
             timestamp = DateTimeOffset.UtcNow,
             source = "application-metrics"
         };
+        
+        return Task.FromResult<object>(result);
     }
 
     public async Task<object> GetHistoricalMetrics(string timeRange = "PT1H")
@@ -140,7 +142,7 @@ public class TelemetryService
             var baseTime = DateTimeOffset.UtcNow.AddHours(-hours);
 
             // Get current metrics for baseline
-            var currentMetrics = await _metricsCollector.CollectMetrics();
+            var currentMetrics = _metricsCollector.CollectMetrics();
 
             // Generate realistic historical data
             for (int i = 0; i < dataPoints; i++)

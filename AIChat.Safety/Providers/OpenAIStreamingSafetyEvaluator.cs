@@ -1,5 +1,6 @@
 using AIChat.Safety.Contracts;
 using AIChat.Safety.Options;
+using AIChat.Safety.Utilities;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -26,15 +27,6 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     private bool _hasViolations = false;
     private bool _disposed = false;
 
-    // Severity threshold constants
-    private static readonly double SeverityThreshold0 = 0.1;
-    private static readonly double SeverityThreshold1 = 0.2;
-    private static readonly double SeverityThreshold2 = 0.3;
-    private static readonly double SeverityThreshold3 = 0.4;
-    private static readonly double SeverityThreshold4 = 0.5;
-    private static readonly double SeverityThreshold5 = 0.6;
-    private static readonly double SeverityThreshold6 = 0.8;
-    private static readonly double SeverityThreshold7 = 1.0;
 
     /// <summary>
     /// Initializes a new instance of the OpenAIStreamingSafetyEvaluator class.
@@ -347,13 +339,7 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
         }
 
         // Calculate overall risk score based on category scores
-        evaluationResult.RiskScore = CalculateRiskScore(evaluationResult.DetectedCategories, maxScore);
-
-        // Add streaming-specific recommendations
-        if (!evaluationResult.IsSafe)
-        {
-            evaluationResult.Recommendations.Insert(0, "Streaming content violation detected. Consider terminating the stream.");
-        }
+        evaluationResult.RiskScore = SafetyUtilities.CalculateRiskScore(evaluationResult.DetectedCategories, maxScore);
 
         return evaluationResult;
     }
@@ -381,14 +367,14 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
         if (flagged)
         {
             maxScore = Math.Max(maxScore, score);
-            var severity = CalculateSeverity(score);
+            var severity = SafetyUtilities.CalculateSeverity(score);
 
             var detectedHarm = new DetectedHarmCategory
             {
                 Category = harmCategory,
                 Severity = severity,
-                Confidence = CalculateConfidence(score),
-                Description = GetCategoryDescription(harmCategory, severity)
+                Confidence = SafetyUtilities.CalculateConfidence(score),
+                Description = SafetyUtilities.GetCategoryDescription(harmCategory, severity, "content")
             };
 
             // Check if the severity meets or exceeds the threshold
@@ -396,7 +382,7 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
             {
                 evaluationResult.IsSafe = false;
                 evaluationResult.DetectedCategories.Add(detectedHarm);
-                evaluationResult.Recommendations.Add(GetRecommendation(harmCategory, severity));
+                evaluationResult.Recommendations.Add(SafetyUtilities.GetRecommendation(harmCategory, severity, true));
             }
         }
     }
@@ -456,86 +442,6 @@ public class OpenAIStreamingSafetyEvaluator : IStreamingSafetyEvaluator
     /// </summary>
     /// <param name="score">The OpenAI score.</param>
     /// <returns>A severity level (0-7).</returns>
- private static int CalculateSeverity(double score)
- {
-     if (score <= SeverityThreshold0) return 0;
-     if (score <= SeverityThreshold1) return 1;
-     if (score <= SeverityThreshold2) return 2;
-     if (score <= SeverityThreshold3) return 3;
-     if (score <= SeverityThreshold4) return 4;
-     if (score <= SeverityThreshold5) return 5;
-     if (score <= SeverityThreshold6) return 6;
-     if (score <= SeverityThreshold7) return 7;
-     return 0;
- }
-
-    /// <summary>
-    /// Calculates confidence score based on OpenAI score.
-    /// </summary>
-    /// <param name="score">The OpenAI score (0-1).</param>
-    /// <returns>A confidence score (0-100).</returns>
-    private static int CalculateConfidence(double score)
-    {
-        return (int)(score * 100);
-    }
-
-    /// <summary>
-    /// Gets a description for a detected harm category.
-    /// </summary>
-    /// <param name="category">The harm category.</param>
-    /// <param name="severity">The severity level.</param>
-    /// <returns>A description of the detection.</returns>
-    private static string GetCategoryDescription(HarmCategory category, int severity)
-    {
-        var severityText = severity switch
-        {
-            <= 2 => "low",
-            <= 4 => "medium",
-            <= 6 => "high",
-            _ => "very high"
-        };
-
-        return $"{category} content detected with {severityText} severity (level {severity}) in streaming content.";
-    }
-
-    /// <summary>
-    /// Gets a recommendation for handling detected harmful content.
-    /// </summary>
-    /// <param name="category">The harm category.</param>
-    /// <param name="severity">The severity level.</param>
-    /// <returns>A recommendation string.</returns>
-    private static string GetRecommendation(HarmCategory category, int severity)
-    {
-        return category switch
-        {
-            HarmCategory.Hate => "Streaming content contains hate speech and should be terminated immediately.",
-            HarmCategory.Harassment => "Streaming content contains harassment and should be terminated immediately.",
-            HarmCategory.SelfHarm => "Streaming content contains self-harm references and requires immediate intervention.",
-            HarmCategory.Sexual => "Streaming content contains sexually explicit material and should be blocked.",
-            HarmCategory.Violence => "Streaming content contains violent material and should be terminated.",
-            _ => "Streaming content contains potentially harmful material and should be reviewed."
-        };
-    }
-
-    /// <summary>
-    /// Calculates an overall risk score based on detected categories and scores.
-    /// </summary>
-    /// <param name="detectedCategories">The detected harm categories.</param>
-    /// <param name="maxScore">The maximum score detected.</param>
-    /// <returns>A risk score (0-100).</returns>
-    private static int CalculateRiskScore(List<DetectedHarmCategory> detectedCategories, double maxScore)
-    {
-        if (!detectedCategories.Any())
-        {
-            return 0;
-        }
-
-        // Base score on maximum score, adjusted by number of categories
-        var baseScore = (int)(maxScore * 100);
-        var categoryMultiplier = Math.Min(detectedCategories.Count, 3);
-        
-        return Math.Min(100, baseScore * categoryMultiplier);
-    }
 
     /// <summary>
     /// Gets a fallback result when the service fails.

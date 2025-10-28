@@ -1,6 +1,7 @@
 using AIChat.Safety.Contracts;
 using AIChat.Safety.Options;
 using AIChat.Safety.Telemetry;
+using AIChat.Safety.Utilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
@@ -25,15 +26,6 @@ public class OpenAIModerationEvaluator : ISafetyEvaluator
     // OpenTelemetry ActivitySource for distributed tracing
     private static readonly ActivitySource ActivitySource = new("AIChat.Safety", "1.0.0");
 
-    // Severity threshold constants
-    private const double SeverityThreshold0 = 0.1;
-    private const double SeverityThreshold1 = 0.2;
-    private const double SeverityThreshold2 = 0.3;
-    private const double SeverityThreshold3 = 0.4;
-    private const double SeverityThreshold4 = 0.5;
-    private const double SeverityThreshold5 = 0.6;
-    private const double SeverityThreshold6 = 0.8;
-    private const double SeverityThreshold7 = 1.0;
 
     /// <summary>
     /// Initializes a new instance of the OpenAIModerationEvaluator class.
@@ -313,7 +305,7 @@ _logger.LogDebug("Text evaluation completed in {ElapsedMs}ms. Result: {IsSafe}",
         }
 
         // Calculate overall risk score based on category scores
-        evaluationResult.RiskScore = CalculateRiskScore(evaluationResult.DetectedCategories, maxScore);
+        evaluationResult.RiskScore = SafetyUtilities.CalculateRiskScore(evaluationResult.DetectedCategories, maxScore);
 
         // Add general recommendations if unsafe
         if (!evaluationResult.IsSafe && !evaluationResult.Recommendations.Any())
@@ -350,14 +342,14 @@ _logger.LogDebug("Text evaluation completed in {ElapsedMs}ms. Result: {IsSafe}",
         if (flagged)
         {
             maxScore = Math.Max(maxScore, score);
-            var severity = CalculateSeverity(score);
+            var severity = SafetyUtilities.CalculateSeverity(score);
 
             var detectedHarm = new DetectedHarmCategory
             {
                 Category = harmCategory,
                 Severity = severity,
-                Confidence = CalculateConfidence(score),
-                Description = GetCategoryDescription(harmCategory, severity)
+                Confidence = SafetyUtilities.CalculateConfidence(score),
+                Description = SafetyUtilities.GetCategoryDescription(harmCategory, severity)
             };
 
             // Check if the severity meets or exceeds the threshold
@@ -366,7 +358,7 @@ _logger.LogDebug("Text evaluation completed in {ElapsedMs}ms. Result: {IsSafe}",
                 _logger.LogDebug("Category {CategoryName} exceeded threshold: severity={Severity}, threshold={Threshold}", categoryName, severity, threshold);
                 evaluationResult.IsSafe = false;
                 evaluationResult.DetectedCategories.Add(detectedHarm);
-                evaluationResult.Recommendations.Add(GetRecommendation(harmCategory, severity));
+                evaluationResult.Recommendations.Add(SafetyUtilities.GetRecommendation(harmCategory, severity));
             }
             else
             {
