@@ -1,31 +1,34 @@
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AIChat.WebApi.Services;
 
 /// <summary>
 /// Helper service for resolving AI agents by provider name
 /// </summary>
-public class AgentService(
-    IServiceProvider serviceProvider,
-    ILogger<AgentService> logger)
+public class AgentService
 {
-    private readonly IServiceProvider _serviceProvider = serviceProvider;
-    private readonly ILogger<AgentService> _logger = logger;
+    private readonly IAgentRegistry _registry;
+    private readonly ILogger<AgentService> _logger;
+
+    public AgentService(IAgentRegistry registry, ILogger<AgentService> logger)
+    {
+        _registry = registry;
+        _logger = logger;
+    }
 
     /// <summary>
     /// Get an agent by provider name
     /// </summary>
     public AIAgent GetAgent(string providerName)
     {
-        try
+        if (_registry.TryGet(providerName, out var agent) && agent != null)
         {
-            return _serviceProvider.GetRequiredKeyedService<AIAgent>(providerName);
+            return agent;
         }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogError(ex, "Failed to resolve agent for provider: {Provider}", providerName);
-            throw new ArgumentException($"Provider '{providerName}' not found or not configured", nameof(providerName));
-        }
+
+        _logger.LogError("Agent not found for provider: {Provider}", providerName);
+        throw new ArgumentException($"Provider '{providerName}' not found or not configured", nameof(providerName));
     }
 
     /// <summary>
@@ -33,14 +36,6 @@ public class AgentService(
     /// </summary>
     public bool ProviderExists(string providerName)
     {
-        try
-        {
-            _serviceProvider.GetRequiredKeyedService<AIAgent>(providerName);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
+        return _registry.TryGet(providerName, out var agent) && agent != null;
     }
 }
